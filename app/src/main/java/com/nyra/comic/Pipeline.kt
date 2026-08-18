@@ -1568,6 +1568,21 @@ class Pipeline(
         )
         val (ex1, ex3) = examples[lang.lowercase()] ?: examples["english"]!!
 
+        // Contoh ID kedua sengaja berupa erangan. Dulu nilainya 'SKIP', dan
+        // model meniru contoh itu: pada halaman uji pengguna, balon berisi
+        // "うぐっ…" dikembalikan sebagai SKIP sehingga satu-satunya balon yang
+        // tidak tersentuh di seluruh halaman. Suara yang keluar dari mulut
+        // tokoh adalah dialog, jadi contohnya harus memperlihatkan terjemahan.
+        val ex2 = when (lang.lowercase()) {
+            "indonesian" -> "Ugh..."
+            "japanese" -> "うぐっ…"
+            "mandarin" -> "呃……"
+            "spanish" -> "Ugh..."
+            "portuguese" -> "Ugh..."
+            "javanese" -> "Adhuh..."
+            else -> "Ugh..."
+        }
+
         return buildString {
             append("You are an accurate, literal manga translator from its original language to $lang. ")
             append("The image contains several speech bubbles arranged vertically. ")
@@ -1591,23 +1606,28 @@ class Pipeline(
             append("6. Do not create new sentences that sound unnatural if they are not in the original text. \n")
             append("7. For long sentences, keep all parts of the meaning. Do not truncate. \n")
             append("8. If unsure about some text, use [?] for that part. \n")
-            append("9. If the bubble only contains SFX, scribbles, is empty, or is background art and not a meaningful dialogue, reply with 'SKIP'. \n\n")
+            append("9. Reply with 'SKIP' ONLY when the bubble is truly empty, contains no readable characters at all, or is pure background art. A bubble that contains ANY readable text must be translated. \n\n")
 
             append("HONORIFICS RULE:\n")
             append("1. If the original text contains Japanese honorifics (san, kun, chan, sama, senpai, sensei, etc.), keep them as-is in the translation. Do NOT translate honorifics. \n")
             append("2. Examples: -san stays as -san, -kun stays as -kun, -chan stays as -chan. \n")
             append("3. This applies even when translating to non-Japanese languages. \n\n")
 
-            append("SFX RULE:\n")
-            append("1. If a bubble contains ONLY sound effects (SFX) with no dialogue, reply with 'SKIP'. \n")
-            append("2. SFX examples: ドドド, ゴゴゴ, バキ, ギュウ, キラキラ, etc. \n")
-            append("3. If a bubble has BOTH dialogue and SFX, translate only the dialogue part. \n\n")
+            append("SFX AND VOICE RULE:\n")
+            append("1. A sound a CHARACTER MAKES WITH THEIR VOICE is dialogue, not SFX. Always translate it. \n")
+            append("2. This includes groans, gasps, cries, laughs, screams, sighs, grunts, hesitation and stammering. \n")
+            append("3. Examples that MUST be translated: うぐっ, ぐっ, あっ, はぁ, うわぁ, ひっ, んっ, えっ, ふふ, あはは, きゃー, うっ, ぐぬぬ. \n")
+            append("4. Render them as a natural $lang equivalent interjection, keeping the same length and intensity. \n")
+            append("5. Only NON-VOCAL environmental sounds drawn as background art are SFX: ドドド, ゴゴゴ, バキ, ドカーン, キラキラ. \n")
+            append("6. Even so, if such a sound sits INSIDE a speech bubble, translate it rather than skipping it. \n")
+            append("7. If a bubble has BOTH dialogue and SFX, translate the dialogue and keep the vocal sounds. \n\n")
 
             append("RETURN ALL IDs RULE:\n")
             append("1. You MUST return a JSON entry for EVERY red ID number visible in the image. \n")
             append("2. Do NOT skip any ID numbers. If ID 1, 2, 3, 4, 5 are visible, your JSON must contain all 5 keys. \n")
             append("3. For IDs you cannot read or translate, use 'SKIP' as the value. \n")
-            append("4. This is critical - missing IDs will cause errors. \n\n")
+            append("4. This is critical - missing IDs will cause errors. \n")
+            append("5. Before answering, check every ID once more: a short bubble with only one or two characters is still a real bubble and usually a vocal reaction. Do not leave it out and do not mark it 'SKIP' just because it is short. \n\n")
 
             // Glosarium ditaruh sesudah semua aturan lain dan tepat sebelum
             // format keluaran: aturan yang paling dekat dengan akhir prompt
@@ -1626,7 +1646,7 @@ class Pipeline(
             append("Provide the response ONLY in valid JSON without markdown formatting. \n")
             append("Keys must be the red ID numbers as strings. \n")
             append("Values must be the $lang translation or 'SKIP'. \n")
-            append("Example output: {\"1\": \"$ex1\", \"2\": \"SKIP\", \"3\": \"$ex3\", \"4\": \"SKIP\", \"5\": \"$ex1\"}")
+            append("Example output: {\"1\": \"$ex1\", \"2\": \"$ex2\", \"3\": \"$ex3\", \"4\": \"SKIP\", \"5\": \"$ex1\"}")
         }
     }
 }
