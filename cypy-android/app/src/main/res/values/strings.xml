@@ -1,0 +1,98 @@
+<resources>
+    <string name="app_name">cypy</string>
+    <string name="results">Hasil</string>
+
+    <!-- Header -->
+    <string name="tagline">Penerjemah manga otomatis</string>
+
+    <!-- Input -->
+    <string name="sec_input">Berkas masukan</string>
+    <string name="btn_pick_files">Pilih berkas</string>
+    <string name="btn_clear_files">Kosongkan</string>
+    <string name="files_empty">Belum ada berkas dipilih.</string>
+    <string name="input_hint">Gambar (PNG, JPG, WEBP), PDF, ZIP/CBZ, RAR/CBR, EPUB.</string>
+
+    <!-- Output -->
+    <string name="sec_output">Folder keluaran</string>
+    <string name="btn_pick_output">Pilih folder</string>
+    <string name="output_empty">Belum dipilih — hasil disimpan di penyimpanan internal aplikasi.</string>
+
+    <!-- Provider -->
+    <string name="sec_provider">Penyedia terjemahan</string>
+    <string name="lbl_provider">Penyedia</string>
+    <string name="lbl_api_key">Kunci API</string>
+    <string name="lbl_model">Model</string>
+    <string name="lbl_base_url">Base URL</string>
+    <string name="lbl_language">Bahasa tujuan</string>
+    <string name="btn_check_models">Cek model</string>
+
+    <!-- Tweak -->
+    <string name="sec_tweak">Pengaturan lanjutan</string>
+    <string name="btn_reset_tweaks">Kembalikan ke bawaan</string>
+    <string name="lbl_sfx">Filter efek suara</string>
+    <string name="lbl_patch">Tambal balon gepeng</string>
+    <string name="lbl_ocr">Terjemahkan teks di luar balon</string>
+    <string name="hint_ocr">Menangkap narasi, teriakan, dan tulisan lepas yang tidak berada di dalam balon dialog.</string>
+    <string name="lbl_rtdetr">Detektor komik cerdas (RT-DETR)</string>
+    <string name="hint_rtdetr">Model tiga kelas yang mengenali balon, teks di dalamnya, dan teks lepas sekaligus. Lebih akurat pada webtoon panjang dan lebih sedikit salah tangkap. Matikan untuk memakai detektor lama.</string>
+    <string name="lbl_warna">Pertahankan warna asli balon</string>
+    <string name="hint_warna">Mengambil warna latar dan warna huruf dari gambar, sehingga balon hitam atau berwarna tidak berubah jadi kotak putih.</string>
+    <string name="lbl_kanan_kiri">Urutan baca kanan ke kiri</string>
+    <string name="hint_kanan_kiri">Manga Jepang dibaca dari kanan ke kiri. Urutan ini menentukan nomor balon yang dikirim ke model, jadi urutan percakapannya ikut benar. Matikan untuk komik Barat, manhua, atau webtoon.</string>
+    <string name="lbl_lanjut">Lanjutkan arsip yang terhenti</string>
+    <string name="hint_lanjut">Halaman yang sudah selesai tidak diterjemahkan ulang saat arsip yang sama dijalankan lagi, jadi kuota tidak terbuang.</string>
+    <string name="lbl_rujukan">Kirim gambar halaman utuh</string>
+    <string name="hint_rujukan">Model ikut melihat halaman aslinya, bukan hanya potongan balon, sehingga kata ganti dan nada bicara lebih tepat. Menambah sedikit kuota unggah.</string>
+    <string name="lbl_konteks">Konteks halaman sebelumnya</string>
+    <string name="hint_konteks">Kirim terjemahan halaman terdahulu agar nama tokoh dan gaya bicara konsisten sepanjang bab. Menambah sedikit biaya token.</string>
+    <string name="lbl_inpaint">Hapus teks luar balon dengan AI</string>
+    <string name="hint_inpaint">Membangun ulang gambar di balik teks efek suara, bukan menimpanya dengan kotak putih. Hasil jauh lebih rapi di atas artwork, tetapi menambah beberapa detik tiap halaman.</string>
+    <string name="model_belum_ada">Model belum diunduh (93 MB, sekali saja).</string>
+    <string name="model_siap">Model siap dipakai (93 MB).</string>
+    <string name="btn_unduh_model">Unduh model</string>
+    <string name="btn_hapus_model">Hapus model</string>
+    <string name="btn_batal_unduh">Batalkan</string>
+    <string name="model_mengunduh">Mengunduh model…</string>
+    <string name="model_progres">Mengunduh %1$d%% (%2$s / %3$s)</string>
+    <string name="model_dibatalkan">Unduhan dibatalkan; kemajuan disimpan.</string>
+    <string name="model_gagal">Unduhan gagal: %1$s</string>
+    <string name="model_terhapus">Model dihapus, %1$s dibebaskan.</string>
+    <string name="lbl_glosarium">Glosarium istilah</string>
+    <string name="hint_glosarium">Kunci terjemahan nama tokoh, jurus, dan gelar agar konsisten sepanjang bab. Menerima TSV, TXT, atau JSON.</string>
+    <string name="btn_pilih_glosarium">Pilih berkas glosarium</string>
+    <string name="btn_hapus_glosarium">Hapus</string>
+    <string name="glosarium_kosong">Belum ada berkas dipilih</string>
+
+    <!-- Console -->
+    <string name="sec_console">Konsol</string>
+    <string name="btn_clear_log">Bersihkan</string>
+    <string name="log_ready">cypy siap.\n</string>
+
+    <!-- Actions -->
+    <string name="btn_translate">Terjemahkan</string>
+    <string name="btn_translating">Menerjemahkan…</string>
+    <string name="btn_stop">Berhenti</string>
+    <string name="btn_results">Lihat hasil terakhir</string>
+    <string name="btn_back">Kembali</string>
+
+    <!-- Mode koreksi manual -->
+    <string name="editor_title">Perbaiki terjemahan</string>
+    <string name="editor_hint">Ketuk balon untuk mengubah teksnya. Cubit untuk memperbesar.</string>
+    <string name="editor_prev">‹ Sebelumnya</string>
+    <string name="editor_next">Berikutnya ›</string>
+    <string name="editor_export">Simpan semua</string>
+    <string name="editor_dialog_title">Ubah teks balon</string>
+    <string name="editor_dialog_hint">Kosongkan untuk menghapus teks di balon ini</string>
+    <string name="editor_save">Simpan</string>
+    <string name="editor_cancel">Batal</string>
+    <string name="editor_no_project">Proyek tidak ditemukan.</string>
+    <string name="editor_render_fail">Halaman tidak bisa dibuka.</string>
+    <string name="editor_no_output">Pilih folder keluaran dulu di layar utama.</string>
+    <string name="editor_exporting">Menyimpan…</string>
+    <string name="editor_export_progress">Menyimpan halaman %1$d dari %2$d…</string>
+    <string name="editor_export_done">Tersimpan: %1$d halaman, gagal %2$d.</string>
+    <string name="btn_edit_result">Perbaiki terjemahan</string>
+    <string name="projects_title">Proyek tersimpan</string>
+    <string name="opt_simpan_proyek">Simpan proyek untuk disunting ulang</string>
+    <string name="hint_proyek">Menyimpan kotak, teks, dan warna tiap halaman supaya salah terjemah bisa diperbaiki tanpa mendeteksi dan menerjemahkan ulang.</string>
+</resources>

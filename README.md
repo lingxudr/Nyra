@@ -1,6 +1,6 @@
 # cypy for Android
 
-Port asli-native dari [cypy](https://github.com/indravoyager/cypy) (v1.25.1.13, APK v1.25.1.21) —
+Port asli-native dari [cypy](https://github.com/indravoyager/cypy) (v1.25.1.13, APK v1.25.1.24) —
 penerjemah manga otomatis: deteksi balon bicara dengan YOLOv8 → terjemah lewat
 LLM vision API → bersihkan latar → tulis ulang teks yang sudah diterjemahkan ke
 dalam balon.
@@ -12,7 +12,7 @@ dengan Kotlin + ONNX Runtime; hanya panggilan terjemahan yang lewat jaringan.
 
 | Berkas | ABI | Ukuran | SHA-256 |
 |---|---|---|---|
-| `cypy-1.25.1.21-arm64-v8a.apk` | arm64-v8a | 56,886,628 B | `452c7a19329754b6b14c092401b3da6216a34dba1f8ee9052fa7d77b05249957` |
+| `cypy-1.25.1.24-arm64-v8a.apk` | arm64-v8a | 56,933,212 B | `24bf50cf8b85f74b92ca8c79e21089d282bc0c2e9412c67c2e85744ce1e74811` |
 
 Hanya varian arm64-v8a yang disertakan (ABI hampir semua telepon Android saat
 ini). Varian armeabi-v7a, x86_64, dan universal tetap bisa dibuat sendiri lewat
@@ -128,6 +128,8 @@ karena server sedang ramai.
 - **Rendering**: Komika Axis untuk Latin (otomatis huruf besar), Kosugi Maru
   untuk non-Latin, mode vertikal khusus bahasa Jepang.
 - **Auto-split**: halaman lebar (spread) dipecah kanan→kiri lalu digabung lagi.
+- **EPUB**: dibaca mengikuti urutan `spine` di dalam berkasnya, bukan urutan
+  nama berkas.
 - **Output**: `<folder pilihan>/<KODE_BAHASA>/…` — PNG untuk gambar lepas, PDF
   untuk arsip/PDF. 10 bahasa target.
 - **Foreground service** + notifikasi progres, jadi proses tetap jalan saat app
@@ -135,7 +137,7 @@ karena server sedang ramai.
 
 ## Verifikasi
 
-Yang dijalankan lewat `gradle testReleaseUnitTest` (212 test dalam 27 kelas, semua lulus):
+Yang dijalankan lewat `gradle testReleaseUnitTest` (285 test dalam 35 kelas, semua lulus):
 
 - **`BoxParityTest`** — 120 kasus acak dibandingkan byte-per-byte dengan hasil
   **kode Python aslinya** untuk 4 tahap: `dropFakeGiants`, `mergeOverlapping`,
@@ -769,3 +771,146 @@ Sebelas test baru (`ModelDownloadTest`) menguji lewat server HTTP sungguhan di
 loopback yang paham `Range` dan bisa memutus sambungan di tengah berkas —
 termasuk kasus server yang mengabaikan `Range` dan mengirim ulang dari awal,
 yang tanpa penanganan menghasilkan berkas ganda panjang.
+
+## Perbaikan ronde 21 — konteks visual, garis luar, EPUB & lanjut-arsip
+
+Tiga sisa daftar tunggu dikerjakan sekaligus. Semuanya bisa dimatikan lewat
+Setelan, dan semuanya menyala secara bawaan.
+
+### 1. Gambar halaman utuh ikut dikirim ke model
+
+Sebelumnya model hanya menerima **mosaik**: potongan tiap balon yang dijahit
+jadi satu gambar bernomor. Efisien, tetapi seluruh konteks visualnya hilang —
+model tidak bisa melihat siapa yang bicara, ekspresi wajahnya, atau tata letak
+panelnya. Itu persis informasi yang menentukan kata ganti dan tingkat
+kesopanan dalam bahasa Indonesia: `you` bisa jadi *kamu*, *Anda*, *kau*, atau
+*kalian*, dan tanpa melihat gambarnya pilihan itu cuma tebakan.
+
+Sekarang halaman utuhnya dikirim sebagai gambar **kedua** (mosaik tetap yang
+pertama, karena hanya di situ ada nomor ID merah). Prompt menegaskan gambar
+kedua adalah rujukan visual saja: tidak boleh diterjemahkan, tidak boleh
+melahirkan ID baru.
+
+Satu detail yang menentukan benar-tidaknya fitur ini: satu request memuat
+sampai 20 balon dan **dipotong per balon, bukan per halaman**, jadi satu
+request kerap bercampur dua halaman. Melampirkan salah satunya dalam keadaan
+itu justru menyesatkan — model akan mencocokkan balon ke halaman yang salah.
+Karena itu rujukan hanya dikirim bila seluruh potongan dalam request berasal
+dari satu bagian halaman yang sama (`PageReference.pilih`), dan blok prompt
+hanya ditambahkan bila gambarnya benar-benar ikut. Menjanjikan gambar kedua
+yang tidak ada akan membuat model mengarang.
+
+### 2. Warna garis luar huruf
+
+`Palette` sudah mengukur warna latar dan warna huruf sejak ronde 16, tetapi
+garis luar selalu digambar memakai warna latar. Untuk balon biasa itu benar.
+Untuk teks lepas di atas panel — SFX dan teriakan — sering salah: huruf putih
+bergaris luar hitam di atas panel abu-abu kehilangan batasnya dan lebur ke
+gambar.
+
+Bahaya terbesarnya bukan gagal mendeteksi, melainkan **salah** mendeteksi:
+setiap huruf dengan anti-aliasing dikelilingi piksel campuran teks+latar, dan
+kalau piksel itu disangka garis luar maka semua balon normal akan mendapat
+garis luar abu-abu yang tidak pernah ada di aslinya. Pembedanya geometris:
+campuran anti-aliasing selalu terletak **pada ruas garis** fg–bg di ruang RGB,
+sedangkan warna garis luar yang dipilih pembuatnya tidak (`jarakKeRuas`).
+
+Menulisnya menyingkap bug yang lebih tua. Warna huruf diambil dari piksel yang
+paling jauh dari latar — pada teks bergaris luar, yang terpilih justru **garis
+luarnya**, sehingga isi dan tepi tertukar. Perbaikannya juga geometris: piksel
+huruf yang seluruh tetangganya juga huruf pasti bagian dalam, yang bersentuhan
+dengan latar pasti tepi (`pisahDalamTepi`). Isi menentukan warna huruf, tepi
+menentukan garis luarnya.
+
+### 3. EPUB
+
+EPUB memang sebuah ZIP, jadi menggilas isinya lewat jalur CBZ sudah
+menghasilkan gambar — hanya saja **urutannya acak**. Nama berkas di dalam EPUB
+kerap tidak berhubungan dengan urutan baca, dan babnya baru ketahuan teracak
+setelah seluruh halaman dibayar. Urutan yang benar tertulis di dalam berkasnya
+sendiri: `META-INF/container.xml` → OPF → `<spine>`. Isi spine biasanya XHTML
+yang masing-masing memuat satu gambar, jadi gambarnya ditarik dari sana dengan
+urutan spine dipertahankan. Sampul yang berada di luar spine tetap jadi halaman
+pertama. Kalau metadatanya cacat, aplikasi jatuh kembali ke urutan nama —
+urutan tebakan lebih baik daripada berkas yang ditolak.
+
+### 4. Melanjutkan arsip yang terhenti
+
+Satu bab 200 halaman berarti ratusan permintaan berbayar selama belasan menit.
+Kalau prosesnya putus — Stop ditekan, kuota habis, jaringan mati, aplikasi
+dibunuh sistem — seluruh biaya itu hangus, karena folder kerja dihapus di blok
+`finally` dan jalan berikutnya mulai dari halaman pertama lagi.
+
+Kini setiap halaman yang selesai disalin ke folder permanen, dan jalan
+berikutnya atas arsip yang sama melewatinya tanpa deteksi maupun terjemahan
+ulang. Kuncinya memuat nama, **ukuran**, dan **bahasa sasaran**: `01.cbz`
+adalah nama paling lazim di dunia manga, dan mengulang bab dalam bahasa lain
+harus memulai titik simpan sendiri.
+
+Menulis tesnya menyingkap jebakan yang halus. Saat proses dihentikan, pipeline
+sengaja tetap menulis **semua** halaman — yang belum diterjemahkan dilewatkan
+apa adanya supaya bab tetap utuh dan terbaca. Kalau titik simpan mempercayai
+"ada berkas keluaran" sebagai tanda selesai, halaman apa adanya itu tidak akan
+pernah diterjemahkan lagi dan pengguna terjebak dengan bab setengah jadi
+selamanya. Karena itu yang dicatat hanya halaman yang **setiap balonnya sudah
+dijawab**, dan titik simpan baru dihapus setelah seluruh halaman tercatat.
+
+Ukurannya pun bukan berkas keluaran melainkan **jumlah permintaan yang sampai
+ke server** — satu-satunya ukuran yang jujur, karena implementasi yang
+diam-diam menerjemahkan ulang lalu menimpa hasilnya tetap menghasilkan PDF yang
+benar sambil menghabiskan seluruh kuota.
+
+### Tes
+
+54 test baru, total **285 test dalam 35 kelas**:
+
+| Kelas | Isi |
+|---|---|
+| `PageReferenceTest` (7) | pemilihan halaman rujukan; request campur-halaman ditolak |
+| `PageReferencePipelineTest` (4) | dua gambar di kabel sungguhan, urutannya, janji prompt |
+| `ProviderHttpTest` (+3) | payload multi-gambar Gemini & OpenAI-compat |
+| `StrokeColorTest` (12) | anti-aliasing bukan garis luar; isi vs tepi tidak tertukar |
+| `EpubOrderTest` (12) | spine menang atas nama berkas; resolusi jalur relatif |
+| `ResumeTest` (11) | kunci titik simpan; bertahan setelah folder kerja dihapus |
+| `ResumePipelineTest` (5) | jalan kedua tidak mengulang permintaan berbayar |
+
+## Ronde 22 — editor kotak, ekspor CBZ, paket font
+
+**Editor kotak.** Kotak balon bisa digeser, diubah ukurannya lewat empat gagang
+sudut, ditambah, dan dihapus. Penyisipan mengurutkan ulang nomor baca lewat
+`BoxUtils.urutBaca`, dan terjemahan serta teks sumber ikut bergeser mengikuti
+penomoran baru.
+
+**Ekspor CBZ.** Satu proyek diekspor jadi arsip `<judul>_<LANG>.cbz` (ZIP
+STORED, nama entri berpadding nol) yang langsung terbaca pembaca komik.
+
+**Paket font — dan koreksi atas asumsinya.**
+
+Fitur ini semula dibangun di atas kesimpulan yang keliru. Cakupan cmap font
+bawaan memang tipis (`kosugi.ttf`: 0 glif Hangul, 0 Thai, 31,8% Han), dan dari
+angka itu disimpulkan bahwa menerjemahkan ke Korea/Thai menghasilkan kotak
+kosong. Render sungguhan membantahnya: kalimat Thai dan Korea tergambar bersih
+tanpa satu pun tofu meski paket tidak terpasang.
+
+Sebabnya, `Typeface.createFromAsset` membangun typeface lewat `Typeface.Builder`
+yang menyetel fallback ke `DEFAULT_FAMILY`, sehingga glif yang absen ditambal
+dari rantai font sistem — dan rantai AOSP memuat `NotoSansThai-Regular.ttf`
+serta `NotoSansCJK-Regular.ttc`. **Cakupan cmap font aplikasi bukan penentu
+munculnya tofu.**
+
+Karena itu paket font kini berperan sebagai jaring pengaman, bukan kebutuhan
+umum. `FontPack.perluUntukBahasa()` bertanya ke perangkat lewat
+`Paint.hasGlyph`, jadi tawaran unduhan hanya muncul di ROM yang benar-benar
+membuang font aksara tersebut (Go edition, ROM pangkasan per-region). Di ponsel
+biasa dialog itu tidak muncul sama sekali.
+
+> **Catatan bagi yang akan menambah tes:** bukti tofu tidak bisa dibuat di
+> Robolectric. Set fontnya jauh lebih luas daripada ponsel mana pun —
+> `hasGlyph` mengembalikan `true` bahkan untuk Cuneiform dan Linear-B — jadi
+> tes piksel apa pun di sana menyesatkan. `FontPackRenderTest` sempat ditulis
+> lalu dihapus karena alasan ini. Verifikasi tofu hanya sah di perangkat nyata.
+
+Isi paket bila diunduh: NotoSansKR 4,6 MB + NotoSansSC 8,3 MB + NotoSansThai
+72 KB (SIL OFL 1.1). Keduanya diperlukan karena tidak ada satu font yang
+menutup semuanya: KR menutup Hangul 100% tapi Han hanya 38,8%; SC menutup Han
+99,9% tapi Hangul 0%.

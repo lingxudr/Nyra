@@ -52,6 +52,22 @@ object ModelDownloader {
     )
 
     /**
+     * Unduh satu paket font tambahan.
+     *
+     * Memakai inti [unduh] yang sama dengan model LaMa, jadi ikut mendapat
+     * lanjut-unduh lewat Range, penulisan ke .part, dan gerbang SHA-256.
+     */
+    fun unduhFont(
+        ctx: Context,
+        item: FontPack.Item,
+        progress: (Long, Long) -> Unit = { _, _ -> },
+        batal: () -> Boolean = { false },
+    ): Hasil = unduh(
+        item.alamat, FontPack.berkas(ctx, item), item.ukuran, progress, batal,
+        sha256 = item.sha256
+    )
+
+    /**
      * SHA-256 berkas, dibaca mengalir per blok.
      *
      * Sengaja TIDAK memuat seluruh berkas ke memori: model ini 93 MB,

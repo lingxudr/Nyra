@@ -10,7 +10,7 @@
     <string name="btn_pick_files">Pilih berkas</string>
     <string name="btn_clear_files">Kosongkan</string>
     <string name="files_empty">Belum ada berkas dipilih.</string>
-    <string name="input_hint">Gambar (PNG, JPG, WEBP), PDF, ZIP/CBZ, RAR/CBR.</string>
+    <string name="input_hint">Gambar (PNG, JPG, WEBP), PDF, ZIP/CBZ, RAR/CBR, EPUB.</string>
 
     <!-- Output -->
     <string name="sec_output">Folder keluaran</string>
@@ -37,6 +37,12 @@
     <string name="hint_rtdetr">Model tiga kelas yang mengenali balon, teks di dalamnya, dan teks lepas sekaligus. Lebih akurat pada webtoon panjang dan lebih sedikit salah tangkap. Matikan untuk memakai detektor lama.</string>
     <string name="lbl_warna">Pertahankan warna asli balon</string>
     <string name="hint_warna">Mengambil warna latar dan warna huruf dari gambar, sehingga balon hitam atau berwarna tidak berubah jadi kotak putih.</string>
+    <string name="lbl_kanan_kiri">Urutan baca kanan ke kiri</string>
+    <string name="hint_kanan_kiri">Manga Jepang dibaca dari kanan ke kiri. Urutan ini menentukan nomor balon yang dikirim ke model, jadi urutan percakapannya ikut benar. Matikan untuk komik Barat, manhua, atau webtoon.</string>
+    <string name="lbl_lanjut">Lanjutkan arsip yang terhenti</string>
+    <string name="hint_lanjut">Halaman yang sudah selesai tidak diterjemahkan ulang saat arsip yang sama dijalankan lagi, jadi kuota tidak terbuang.</string>
+    <string name="lbl_rujukan">Kirim gambar halaman utuh</string>
+    <string name="hint_rujukan">Model ikut melihat halaman aslinya, bukan hanya potongan balon, sehingga kata ganti dan nada bicara lebih tepat. Menambah sedikit kuota unggah.</string>
     <string name="lbl_konteks">Konteks halaman sebelumnya</string>
     <string name="hint_konteks">Kirim terjemahan halaman terdahulu agar nama tokoh dan gaya bicara konsisten sepanjang bab. Menambah sedikit biaya token.</string>
     <string name="lbl_inpaint">Hapus teks luar balon dengan AI</string>
@@ -85,6 +91,36 @@
     <string name="editor_exporting">Menyimpan…</string>
     <string name="editor_export_progress">Menyimpan halaman %1$d dari %2$d…</string>
     <string name="editor_export_done">Tersimpan: %1$d halaman, gagal %2$d.</string>
+
+    <!-- Sunting kotak (ronde 22) -->
+    <string name="editor_box_mode">Sunting kotak</string>
+    <string name="editor_box_add">+ Kotak</string>
+    <string name="editor_box_del">Hapus</string>
+    <string name="editor_box_pick_first">Ketuk sebuah kotak dulu.</string>
+    <string name="editor_box_del_confirm">Hapus kotak nomor %1$d beserta teksnya?</string>
+    <string name="editor_hint_box">Ketuk kotak untuk memilih, seret isinya untuk menggeser, tarik sudutnya untuk mengubah ukuran.</string>
+    <string name="editor_hint_draw">Seret pada gambar untuk menggambar kotak baru.</string>
+
+    <!-- Ekspor CBZ (ronde 22) -->
+    <string name="editor_export_png">Berkas PNG per halaman</string>
+    <string name="editor_export_cbz">Satu arsip CBZ</string>
+    <string name="editor_export_cbz_done">Arsip %1$s dibuat: %2$d halaman, gagal %3$d.</string>
+    <string name="editor_export_cbz_fail">Gagal menulis arsip CBZ.</string>
+
+    <!-- Paket font (ronde 22) -->
+    <string name="font_judul">Paket font tambahan</string>
+    <string name="font_penjelasan">Font bawaan tidak punya huruf Korea, Thai, dan sebagian besar aksara Mandarin. Tanpa paket ini, terjemahan ke bahasa tersebut tergambar sebagai kotak kosong.</string>
+    <string name="font_belum">%1$s — belum diunduh (%2$s)</string>
+    <string name="font_siap">%1$s — siap dipakai (%2$s)</string>
+    <string name="font_unduh">Unduh</string>
+    <string name="font_hapus">Hapus</string>
+    <string name="font_mengunduh">Mengunduh %1$s… %2$d%%</string>
+    <string name="font_selesai">%1$s siap dipakai.</string>
+    <string name="font_gagal">Unduhan gagal: %1$s</string>
+    <string name="font_terhapus">Paket font dihapus, %1$s dibebaskan.</string>
+    <string name="font_peringatan">Perangkat ini sepertinya tidak punya font untuk aksara %1$s, jadi hasilnya berisiko tergambar sebagai kotak kosong. Unduh paket fontnya sekarang?</string>
+    <string name="font_nanti">Nanti saja</string>
+    <string name="font_sedang_lain">Tunggu unduhan font yang sedang berjalan selesai.</string>
     <string name="btn_edit_result">Perbaiki terjemahan</string>
     <string name="projects_title">Proyek tersimpan</string>
     <string name="opt_simpan_proyek">Simpan proyek untuk disunting ulang</string>

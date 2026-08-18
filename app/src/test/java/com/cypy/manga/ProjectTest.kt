@@ -140,6 +140,31 @@ class ProjectTest {
     }
 
     @Test
+    fun garisLuarBertahanMelintasiSimpanBaca() {
+        // Regresi ronde 21: garisLuar ditambahkan ke Colors tapi tidak ikut
+        // diserialisasi. Akibatnya setiap kali editor menggambar ulang halaman,
+        // garis luar berwarna yang sudah diukur dari gambar asli berubah jadi
+        // hitam bawaan — teks putih ber-outline putih di panel gelap kehilangan
+        // kontras yang justru menjadi alasan fitur itu dibuat.
+        val p = contoh("prj_outline")
+        p.pages[0].colors["10,20,110,90"] = Palette.Colors(
+            Color.BLACK, Color.WHITE, true, emptyList(), Color.rgb(0, 128, 255)
+        )
+        val ulang = Project.fromJson(JSONObject(p.toJson().toString()))
+        val c = ulang.pages[0].colors["10,20,110,90"]
+        assertNotNull(c)
+        assertEquals(Color.rgb(0, 128, 255), c!!.garisLuar)
+    }
+
+    @Test
+    fun garisLuarKosongTetapNullBukanHitam() {
+        // Kebalikannya sama pentingnya: menyimpan null sebagai 0 akan membuat
+        // SETIAP balon biasa mendapat garis luar hitam yang tidak pernah ada.
+        val ulang = Project.fromJson(JSONObject(contoh().toJson().toString()))
+        assertNull(ulang.pages[0].colors["10,20,110,90"]?.garisLuar)
+    }
+
+    @Test
     fun loadReturnsNullOnMissingOrCorruptFile() {
         assertNull("proyek tak ada harus null, bukan crash", Project.load(ctx, "tidak_ada"))
 

@@ -22,9 +22,53 @@ class TextRenderer(ctx: Context) {
     private val fontManga: Typeface
     private val fontUniversal: Typeface
 
+    /**
+     * Font paket tambahan, dimuat sekali di awal.
+     *
+     * Dipetakan per aksara, bukan per bahasa tujuan, sebab satu halaman bisa
+     * memuat balon dalam aksara berbeda (misalnya nama Korea yang dibiarkan
+     * asli di tengah terjemahan Indonesia).
+     */
+    private val fontTambahan: Map<FontPack.Aksara, Typeface>
+
     init {
         fontManga = loadAssetFont(ctx, "komika.ttf")
         fontUniversal = loadAssetFont(ctx, "kosugi.ttf")
+        fontTambahan = fontPack(ctx)
+    }
+
+    companion object {
+        /**
+         * Typeface paket font, dibagi seluruh proses.
+         *
+         * Tanpa cache, setiap Pipeline baru mengurai ulang OTF Mandarin 8,3 MB
+         * dari penyimpanan — biaya yang terbayar berulang kali saat pengguna
+         * membuka editor per halaman. Typeface tidak menyimpan rujukan ke
+         * Context, jadi aman disimpan statis.
+         */
+        private var cache: Map<FontPack.Aksara, Typeface>? = null
+
+        @Synchronized
+        private fun fontPack(ctx: Context): Map<FontPack.Aksara, Typeface> {
+            cache?.let { return it }
+            val m = buildMap {
+                FontPack.muat(ctx, FontPack.KR)?.let { put(FontPack.Aksara.HANGUL, it) }
+                FontPack.muat(ctx, FontPack.SC)?.let { put(FontPack.Aksara.HAN, it) }
+                FontPack.muat(ctx, FontPack.TH)?.let { put(FontPack.Aksara.THAI, it) }
+            }
+            cache = m
+            return m
+        }
+
+        /**
+         * Buang cache setelah paket diunduh atau dihapus.
+         *
+         * Wajib dipanggil oleh UI unduhan: tanpa ini, font yang baru selesai
+         * diunduh tidak dipakai sampai proses aplikasi dimulai ulang, dan
+         * gejalanya persis seperti unduhan yang tidak berfungsi.
+         */
+        @Synchronized
+        fun invalidateFontCache() { cache = null }
     }
 
     private fun loadAssetFont(ctx: Context, name: String): Typeface = try {
@@ -41,8 +85,19 @@ class TextRenderer(ctx: Context) {
 
     fun hasNonLatin(text: String): Boolean = nonLatin.matcher(text).find()
 
-    private fun fontFor(text: String): Typeface =
-        if (hasNonLatin(text)) fontUniversal else fontManga
+    /**
+     * Pilih font untuk sepotong teks.
+     *
+     * Urutannya: paket tambahan yang cocok (kalau terpasang) -> kosugi untuk
+     * aksara non-Latin -> komika untuk Latin. Paket didahulukan karena hanya
+     * ia yang punya glif Hangul/Thai sama sekali; tanpanya teks tergambar
+     * sebagai kotak kosong.
+     */
+    private fun fontFor(text: String): Typeface {
+        val aks = FontPack.aksara(text)
+        fontTambahan[aks]?.let { return it }
+        return if (hasNonLatin(text)) fontUniversal else fontManga
+    }
 
     private data class Setting(
         val skalaW: Float, val skalaH: Float, val fontScale: Float,
@@ -208,7 +263,9 @@ class TextRenderer(ctx: Context) {
             style = Paint.Style.STROKE
             strokeWidth = strokeW * 2f
             strokeJoin = Paint.Join.ROUND
-            color = colors.background
+            // Garis luar terukur kalau balon aslinya memang punya; kalau tidak,
+            // warna latar seperti sebelumnya.
+            color = colors.garisLuar ?: colors.background
             textAlign = Paint.Align.CENTER
         }
         val fillPaint = makePaint(tf, finalSize.toFloat()).apply {
@@ -278,7 +335,9 @@ class TextRenderer(ctx: Context) {
         }
 
         val fontSize = max(setting.minFont, (bestFontSize * setting.fontScale).toInt())
-        val tf = fontUniversal
+        // Jalur vertikal juga lewat fontFor: teks vertikal Korea/Mandarin
+        // butuh paket tambahan yang sama, bukan hanya kosugi.
+        val tf = fontFor(text)
 
         val actualW = bestColumns.size * fontSize
         val actualH = (bestColumns.maxOfOrNull { it.length } ?: 0) * fontSize
@@ -302,7 +361,7 @@ class TextRenderer(ctx: Context) {
             style = Paint.Style.STROKE
             strokeWidth = strokeW * 2f
             strokeJoin = Paint.Join.ROUND
-            color = colors.background
+            color = colors.garisLuar ?: colors.background
         }
         val fillPaint = makePaint(tf, fontSize.toFloat()).apply {
             style = Paint.Style.FILL

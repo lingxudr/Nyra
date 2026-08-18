@@ -26,8 +26,8 @@ android {
         applicationId = "com.cypy.manga"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.25.1.21"
+        versionCode = 12
+        versionName = "1.25.1.24"
     }
 
     signingConfigs {
