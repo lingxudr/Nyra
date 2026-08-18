@@ -480,6 +480,9 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         }
         b.btnTranslate.setOnClickListener { startTranslation() }
         b.btnStop.setOnClickListener { TranslationService.stop(this) }
+        b.btnModels.setOnClickListener {
+            startActivity(Intent(this, ModelsActivity::class.java))
+        }
         b.btnLibrary.setOnClickListener {
             startActivity(Intent(this, LibraryActivity::class.java))
         }

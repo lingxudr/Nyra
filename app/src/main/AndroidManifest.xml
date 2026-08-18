@@ -76,6 +76,12 @@
             android:label="@string/lib_title"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />
 
+        <activity
+            android:name=".ModelsActivity"
+            android:exported="false"
+            android:label="@string/mdl_title"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />
+
         <service
             android:name=".TranslationService"
             android:exported="false"

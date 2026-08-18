@@ -174,4 +174,38 @@
     <string name="reader_source">Teks asli</string>
     <string name="reader_translation">Terjemahan</string>
     <string name="reader_bubble">Balon %1$d</string>
+
+    <!-- Manajemen model -->
+    <string name="mdl_title">Model &amp; berkas</string>
+    <string name="mdl_open">Kelola model &amp; font</string>
+    <string name="mdl_summary">Unduhan tambahan: %1$s terpakai.\nBawaan aplikasi: %2$s (tidak bisa dihapus).</string>
+    <string name="mdl_bundled">Bawaan aplikasi</string>
+    <string name="mdl_bundled_hint">Ikut di dalam berkas pemasangan dan sudah ditandatangani, jadi tidak perlu diunduh dan tidak bisa hilang sendiri.</string>
+    <string name="mdl_bundled_in_apk">Bagian dari APK</string>
+    <string name="mdl_badge_bundled">bawaan</string>
+    <string name="mdl_optional">Unduhan tambahan</string>
+    <string name="mdl_optional_hint">Diunduh atas permintaan Anda dan disimpan di penyimpanan internal aplikasi. Hash SHA-256 diperiksa sebelum berkas dipakai.</string>
+    <string name="mdl_rtdetr">Detektor balon RT-DETR</string>
+    <string name="mdl_ocr">Detektor teks PP-OCR</string>
+    <string name="mdl_yolo">Detektor cadangan YOLO</string>
+    <string name="mdl_komika">Font Komika</string>
+    <string name="mdl_kosugi">Font Kosugi</string>
+    <string name="mdl_lama">Model inpaint LaMa</string>
+    <string name="mdl_lama_desc">Menghapus teks latar tanpa balon dan mengisi kembali gambarnya. Dipakai hanya bila sakelar inpaint dinyalakan.</string>
+    <string name="mdl_font_desc">Huruf tambahan supaya teks tidak muncul sebagai kotak kosong.</string>
+    <string name="mdl_st_absent">belum ada</string>
+    <string name="mdl_st_partial">separuh</string>
+    <string name="mdl_st_installed">terpasang</string>
+    <string name="mdl_st_verified">terverifikasi</string>
+    <string name="mdl_st_broken">rusak</string>
+    <string name="mdl_verify">Verifikasi</string>
+    <string name="mdl_resume">Lanjutkan</string>
+    <string name="mdl_clean">Buang berkasnya</string>
+    <string name="mdl_wait">Menunggu…</string>
+    <string name="mdl_downloading">Mengunduh %1$s — %2$d%% (%3$s / %4$s)</string>
+    <string name="mdl_verifying">Memeriksa %1$s… membaca seluruh berkas.</string>
+    <string name="mdl_verify_ok">%1$s utuh: hash cocok.</string>
+    <string name="mdl_verify_fail_title">Berkas tidak utuh</string>
+    <string name="mdl_verify_fail">%1$s tidak lolos pemeriksaan.\n\nHash terbaca: %2$s\n%3$s\n\nBerkas dengan ukuran yang tepat pun bisa rusak. Membuangnya lalu mengunduh ulang adalah cara paling aman.</string>
+    <string name="model_dihapus">Dihapus, %1$s dibebaskan.</string>
 </resources>
