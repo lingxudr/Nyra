@@ -188,7 +188,8 @@ class TextRenderer(ctx: Context) {
         x1: Int, y1: Int, x2: Int, y2: Int,
         backgroundPatch: Boolean, targetLanguage: String?,
         maskMarginRatio: Float,
-        colors: Palette.Colors = Palette.DEFAULT
+        colors: Palette.Colors = Palette.DEFAULT,
+        ikutiKontur: Boolean = false
     ) {
         var text = text0.trim()
         if (text.isEmpty()) return
@@ -199,21 +200,28 @@ class TextRenderer(ctx: Context) {
         val langKey = (targetLanguage ?: "").lowercase()
 
         if (!backgroundPatch) {
-            // White rounded overlay with soft edge, matching the PIL overlay+blur step.
-            val marginX = (boxW * maskMarginRatio).toInt()
-            val marginY = (boxH * maskMarginRatio).toInt()
-            val radius = max(6, min(boxW, boxH) / 3).toFloat()
-            val clear = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = colors.background
-                style = Paint.Style.FILL
-                maskFilter = BlurMaskFilter(3f, BlurMaskFilter.Blur.NORMAL)
+            // Utamakan bentuk balon yang sebenarnya (ronde 24). Persegi
+            // membulat menimpa artwork di sudut kotak pada balon oval, miring,
+            // atau berekor; kontur hanya menimpa bagian dalam balon.
+            val pakaiKontur = ikutiKontur &&
+                gambarKontur(canvas, bmp, x1, y1, x2, y2, colors.background)
+            if (!pakaiKontur) {
+                // White rounded overlay with soft edge, matching the PIL overlay+blur step.
+                val marginX = (boxW * maskMarginRatio).toInt()
+                val marginY = (boxH * maskMarginRatio).toInt()
+                val radius = max(6, min(boxW, boxH) / 3).toFloat()
+                val clear = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = colors.background
+                    style = Paint.Style.FILL
+                    maskFilter = BlurMaskFilter(3f, BlurMaskFilter.Blur.NORMAL)
+                }
+                canvas.drawRoundRect(
+                    RectF(
+                        (x1 + marginX).toFloat(), (y1 + marginY).toFloat(),
+                        (x2 - marginX).toFloat(), (y2 - marginY).toFloat()
+                    ), radius, radius, clear
+                )
             }
-            canvas.drawRoundRect(
-                RectF(
-                    (x1 + marginX).toFloat(), (y1 + marginY).toFloat(),
-                    (x2 - marginX).toFloat(), (y2 - marginY).toFloat()
-                ), radius, radius, clear
-            )
         }
 
         if (langKey == "japanese" || langKey == "jepang") {
@@ -287,6 +295,51 @@ class TextRenderer(ctx: Context) {
             canvas.drawText(line, centerX, baseline, fillPaint)
             baseline += block.lineHeight + spacing
         }
+    }
+
+    /**
+     * Menimpa isi balon mengikuti bentuk aslinya, bukan persegi membulat.
+     *
+     * Mengembalikan true bila kontur berhasil dipakai. False berarti pemanggil
+     * harus kembali ke persegi membulat — kotak terlalu kecil, tidak ada garis
+     * tepi yang mengurung (teks bebas tanpa balon), atau isi banjir bocor.
+     *
+     * Alfa kontur dipakai sebagai peluruhan tepi, jadi transisinya halus tanpa
+     * BlurMaskFilter. Piksel yang alfanya nol tidak disentuh sama sekali —
+     * itulah inti perbaikannya: artwork di sudut kotak tetap utuh.
+     */
+    internal fun gambarKontur(
+        canvas: Canvas, bmp: Bitmap,
+        x1: Int, y1: Int, x2: Int, y2: Int,
+        warnaLatar: Int
+    ): Boolean {
+        val cx1 = x1.coerceIn(0, bmp.width)
+        val cy1 = y1.coerceIn(0, bmp.height)
+        val cx2 = x2.coerceIn(0, bmp.width)
+        val cy2 = y2.coerceIn(0, bmp.height)
+        val w = cx2 - cx1
+        val h = cy2 - cy1
+        if (w < BubbleContour.MIN_SISI || h < BubbleContour.MIN_SISI) return false
+
+        val piksel = IntArray(w * h)
+        bmp.getPixels(piksel, 0, w, cx1, cy1, w, h)
+
+        val hasil = BubbleContour.hitung(piksel, w, h)
+        if (!hasil.sah) return false
+
+        // Bangun potongan berwarna latar dengan alfa kontur, lalu tempelkan.
+        val isi = IntArray(w * h)
+        val r = Color.red(warnaLatar)
+        val g = Color.green(warnaLatar)
+        val b = Color.blue(warnaLatar)
+        for (i in isi.indices) {
+            val a = (hasil.alfa[i] * 255f).toInt().coerceIn(0, 255)
+            isi[i] = Color.argb(a, r, g, b)
+        }
+        val lapis = Bitmap.createBitmap(isi, w, h, Bitmap.Config.ARGB_8888)
+        canvas.drawBitmap(lapis, cx1.toFloat(), cy1.toFloat(), null)
+        lapis.recycle()
+        return true
     }
 
     /**

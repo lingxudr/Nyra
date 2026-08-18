@@ -1460,7 +1460,8 @@ class Pipeline(
             backgroundPatch = usePatch,
             targetLanguage = lang,
             maskMarginRatio = cfg.maskMarginRatio,
-            colors = warna
+            colors = warna,
+            ikutiKontur = cfg.konturBalon
         )
         return true
     }

@@ -323,6 +323,8 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         b.swRtdetr.setOnCheckedChangeListener { _, checked -> cfg.detektorRtdetr = checked }
         b.swWarna.isChecked = cfg.warnaOtomatis
         b.swWarna.setOnCheckedChangeListener { _, checked -> cfg.warnaOtomatis = checked }
+        b.swKontur.isChecked = cfg.konturBalon
+        b.swKontur.setOnCheckedChangeListener { _, checked -> cfg.konturBalon = checked }
 
         // Arah baca: sakelar manual hanya berlaku saat deteksi otomatis mati,
         // jadi ia diredupkan supaya pengguna tidak mengira setelannya diabaikan
@@ -412,6 +414,7 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
             cfg.ocrTeksLepas = true
             cfg.detektorRtdetr = true
             cfg.warnaOtomatis = true
+            cfg.konturBalon = true
             cfg.bacaKananKeKiri = true
             cfg.arahBacaOtomatis = true
             cfg.cacheTerjemahan = true

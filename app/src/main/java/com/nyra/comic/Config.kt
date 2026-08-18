@@ -242,6 +242,19 @@ class Config internal constructor(ctx: Context) {
         get() = prefs.getBoolean("warna_otomatis", true)
         set(v) = prefs.edit().putBoolean("warna_otomatis", v).apply()
 
+    /**
+     * Timpa balon mengikuti bentuk aslinya, bukan persegi membulat.
+     *
+     * Kotak RT-DETR selalu lebih besar dari balon ovalnya, jadi persegi
+     * membulat ikut mengecat artwork di keempat sudut. BubbleContour mencari
+     * batas balon yang sebenarnya lewat Otsu + isi banjir dan hanya menimpa
+     * bagian dalamnya. Kalau balon tidak punya garis tepi tertutup, jalur ini
+     * menolak sendiri dan bentuk lama dipakai kembali.
+     */
+    var konturBalon: Boolean
+        get() = prefs.getBoolean("kontur_balon", true)
+        set(v) = prefs.edit().putBoolean("kontur_balon", v).apply()
+
 
     /**
      * Hapus teks di luar balon dengan LaMa, bukan mengecat putih.

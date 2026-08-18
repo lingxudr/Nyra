@@ -36,6 +36,8 @@
     <string name="lbl_rtdetr">Detektor komik cerdas (RT-DETR)</string>
     <string name="hint_rtdetr">Model tiga kelas yang mengenali balon, teks di dalamnya, dan teks lepas sekaligus. Lebih akurat pada webtoon panjang dan lebih sedikit salah tangkap. Matikan untuk memakai detektor lama.</string>
     <string name="lbl_warna">Pertahankan warna asli balon</string>
+    <string name="lbl_kontur">Ikuti bentuk balon</string>
+    <string name="hint_kontur">Menutup balon sesuai bentuk aslinya, bukan persegi. Mencegah artwork di sudut balon oval ikut tercat. Balon yang bentuknya tak terbaca otomatis kembali memakai persegi membulat.</string>
     <string name="hint_warna">Mengambil warna latar dan warna huruf dari gambar, sehingga balon hitam atau berwarna tidak berubah jadi kotak putih.</string>
     <string name="lbl_kanan_kiri">Urutan baca kanan ke kiri</string>
     <string name="hint_kanan_kiri">Manga Jepang dibaca dari kanan ke kiri. Urutan ini menentukan nomor balon yang dikirim ke model, jadi urutan percakapannya ikut benar. Matikan untuk komik Barat, manhua, atau webtoon.</string>
