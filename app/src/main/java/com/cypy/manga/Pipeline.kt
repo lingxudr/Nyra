@@ -1,0 +1,1266 @@
+package com.cypy.manga
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.net.Uri
+import org.json.JSONObject
+import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+
+/**
+ * Port of cypy/core/translator.py — the whole translation pipeline:
+ * detect -> crop -> mosaic -> LLM -> write text back -> save.
+ */
+class Pipeline(
+    private val ctx: Context,
+    private val cfg: Config,
+    private val log: (String) -> Unit,
+    private val progress: (Int, Int) -> Unit
+) {
+
+    @Volatile var cancelled = false
+
+    private val renderer = TextRenderer(ctx)
+    private val rateLimiter = RateLimiter(cfg) { log(it) }
+    private var detector: YoloDetector? = null
+    private var textDetector: TextRegionDetector? = null
+    private var rtDetector: RtDetector? = null
+
+    /**
+     * Warna latar/teks per kotak, hasil pengukuran RT-DETR + Palette.
+     * Kunci = identitas kotak (lihat kunciKotak). Kosong berarti pakai
+     * putih/hitam seperti perilaku lama.
+     */
+    private val warnaKotak = HashMap<String, Palette.Colors>()
+
+    /**
+     * Seams for instrumentation. In production these stay null and the real
+     * ONNX detector / provider factory are used.
+     */
+    var detectorOverride: ((Bitmap) -> List<IntArray>)? = null
+
+    /** Seam untuk detektor teks lepas-balon. */
+    var textDetectorOverride: ((Bitmap) -> List<IntArray>)? = null
+
+    /** Seam untuk detektor tiga-kelas RT-DETR. */
+    var rtDetectorOverride: ((Bitmap) -> List<RtDetector.Det>)? = null
+
+    /**
+     * Seam uji inpaint. Dipanggil dengan kotak-kotak yang AKAN dihapus LaMa
+     * pada satu bagian halaman, tepat sebelum model dijalankan.
+     *
+     * Ada karena onnxruntime tidak punya pustaka native di unit test, jadi
+     * Inpainter sungguhan tidak bisa dimuat — padahal yang perlu diuji justru
+     * PEMILIHAN sasarannya, bukan kualitas hasil hapusnya. Mengembalikan
+     * jumlah petak (meniru Inpainter.erase) supaya jalur log tetap teruji.
+     */
+    var inpaintOverride: ((List<IntArray>) -> Int)? = null
+
+    /**
+     * Proyek yang sedang direkam, atau null bila perekaman dimatikan.
+     *
+     * Diisi di run() dan ditulis ke disk setiap kali satu berkas masukan
+     * selesai, bukan sekali di akhir: proses bab panjang bisa dihentikan
+     * pengguna atau dibunuh sistem, dan hasil yang sudah dibayar (deteksi +
+     * panggilan LLM) tidak boleh ikut hilang.
+     */
+    private var project: Project? = null
+
+    /** Proyek hasil proses terakhir; dipakai UI untuk membuka editor. */
+    var lastProject: Project? = null
+        private set
+    var providerOverride: LLMProvider? = null
+
+    /**
+     * Glosarium yang dipakai untuk seluruh proses ini. Dibaca sekali di awal
+     * agar berkas tidak dibuka ulang untuk setiap mosaik. Tes menyuntikkannya
+     * langsung lewat seam ini.
+     */
+    var glossaryOverride: List<Glossary.Entry>? = null
+    private var glossary: List<Glossary.Entry> = emptyList()
+
+    /** Riwayat terjemahan halaman sebelumnya (konsistensi lintas halaman). */
+    internal val pageContext = PageContext()
+
+    /**
+     * Kunci kotak yang berasal dari teks DI LUAR balon. Hanya kotak-kotak ini
+     * yang dilewatkan ke inpaint: di dalam balon putih polos, isi-putih sudah
+     * sempurna dan jauh lebih cepat.
+     *
+     * Isinya milik SATU bagian halaman saja dan disalin ke [PartEntry.lepas]
+     * segera setelah detectBoxes() selesai — persis seperti [warnaKotak].
+     * Lihat catatan panjang di PartEntry.lepas untuk alasannya.
+     */
+    private val teksLepasKotak = HashSet<String>()
+
+    private var inpainter: Inpainter? = null
+
+    data class OutputItem(val name: String, val uri: Uri?, val localPath: String?)
+
+    class Result(
+        val outputs: MutableList<OutputItem> = mutableListOf(),
+        var success: Int = 0,
+        var failed: Int = 0,
+        var total: Int = 0,
+        var error: String? = null
+    )
+
+    private fun yolo(): YoloDetector {
+        detector?.let { return it }
+        log("Loading detection model...")
+        val d = YoloDetector(ctx)
+        detector = d
+        return d
+    }
+
+    private fun ocr(): TextRegionDetector? {
+        textDetector?.let { return it }
+        return runCatching {
+            log("Memuat model detektor teks...")
+            TextRegionDetector(ctx).also { textDetector = it }
+        }.getOrElse {
+            // Model teks bersifat tambahan: kalau gagal dimuat, terjemahan
+            // balon harus tetap jalan seperti biasa.
+            log("  [!] Detektor teks tidak bisa dimuat: ${it.message}")
+            null
+        }
+    }
+
+    /**
+     * RT-DETR bersifat tambahan: kalau asetnya tidak ada atau gagal dimuat,
+     * pipeline harus jatuh kembali ke YOLOv8 tanpa menggagalkan pekerjaan.
+     */
+    private fun rt(): RtDetector? {
+        rtDetector?.let { return it }
+        if (!RtDetector.tersedia(ctx)) return null
+        return runCatching {
+            log("Memuat detektor komik RT-DETR...")
+            RtDetector(ctx).also { rtDetector = it }
+        }.getOrElse {
+            log("  [!] RT-DETR tidak bisa dimuat: ${it.message}")
+            null
+        }
+    }
+
+    fun close() {
+        detector?.close()
+        detector = null
+        textDetector?.close()
+        textDetector = null
+        rtDetector?.close()
+        rtDetector = null
+        inpainter?.close()
+        inpainter = null
+        warnaKotak.clear()
+    }
+
+    fun cancel() {
+        cancelled = true
+        rateLimiter.cancelled = true
+    }
+
+    // ------------------------------------------------------------------
+    // Entry point
+    // ------------------------------------------------------------------
+
+    fun run(inputs: List<Uri>, targetLanguage: String, outputTree: Uri): Result {
+        val result = Result()
+        val started = System.currentTimeMillis()
+        val provider = providerOverride ?: LLMProvider.create(cfg)
+
+        log("Provider: ${provider.providerName} (${provider.modelName})")
+        log("Target language: $targetLanguage")
+        muatGlosarium()
+
+        val workRoot = File(ctx.cacheDir, "cypy_work_${System.currentTimeMillis()}")
+        workRoot.mkdirs()
+
+        // Proyek dibuat di awal supaya halaman bisa direkam sambil jalan.
+        // Namanya diambil dari masukan pertama — itu yang dikenali pengguna
+        // di daftar, bukan cap waktu.
+        if (cfg.simpanProyek) {
+            val judul = inputs.firstOrNull()
+                ?.let { runCatching { Storage.displayName(ctx, it) }.getOrNull() }
+                ?: "Proyek"
+            project = Project(
+                id = Project.newId(),
+                name = if (inputs.size > 1) "$judul (+${inputs.size - 1})" else judul,
+                targetLanguage = targetLanguage,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+        }
+
+        try {
+            for ((idx, uri) in inputs.withIndex()) {
+                if (cancelled) break
+                val name = Storage.displayName(ctx, uri)
+                val e = Storage.ext(name)
+                log("")
+                log("[${idx + 1}/${inputs.size}] $name")
+
+                // Riwayat direset hanya di batas bab yang sebenarnya, yaitu
+                // saat berkas berupa PDF atau arsip. Gambar lepas diproses satu
+                // per satu tetapi lazimnya berasal dari bab yang sama, jadi
+                // riwayatnya justru harus terus mengalir antar gambar.
+                if (e in Storage.PDF_EXTS || e in Storage.ZIP_EXTS || e in Storage.RAR_EXTS) {
+                    pageContext.clear()
+                }
+
+                val itemDir = File(workRoot, "item$idx").apply { mkdirs() }
+                when {
+                    e in Storage.IMAGE_EXTS ->
+                        handleImages(listOf(uri to name), provider, targetLanguage, outputTree, itemDir, result)
+                    e in Storage.PDF_EXTS ->
+                        handlePdf(uri, name, provider, targetLanguage, outputTree, itemDir, result)
+                    e in Storage.ZIP_EXTS || e in Storage.RAR_EXTS ->
+                        handleArchive(uri, name, e, provider, targetLanguage, outputTree, itemDir, result)
+                    else -> {
+                        log("  [!] Unsupported file type: .$e")
+                        result.failed++
+                        result.total++
+                    }
+                }
+            }
+        } catch (ake: ApiKeyException) {
+            result.error = "API key for ${provider.providerName} is missing, expired or invalid."
+            log("[!] ${result.error}")
+        } catch (ex: Exception) {
+            result.error = ex.message ?: ex.toString()
+            log("[!] ${result.error}")
+        } finally {
+            workRoot.deleteRecursively()
+            // Simpan apa pun yang sempat direkam, termasuk saat proses gagal
+            // atau dihentikan di tengah jalan: halaman yang sudah selesai
+            // tetap bisa disunting tanpa membayar deteksi + LLM lagi.
+            project?.let { prj ->
+                if (prj.pages.isEmpty()) Project.delete(ctx, prj.id)
+                else runCatching {
+                    prj.save(ctx)
+                    Project.prune(ctx)
+                    lastProject = prj
+                    log("[Proyek] ${prj.pages.size} halaman disimpan — bisa disunting lewat Hasil.")
+                }.onFailure { log("  [!] Proyek gagal disimpan: ${it.message}") }
+            }
+            project = null
+        }
+
+        val secs = (System.currentTimeMillis() - started) / 1000.0
+        log("")
+        log("[Timer] Translation completed in ${"%.1f".format(secs)}s!")
+        return result
+    }
+
+    /** Loose images given as content Uris; copied into cache and batched together. */
+    private fun handleImages(
+        items: List<Pair<Uri, String>>, provider: LLMProvider, lang: String,
+        outputTree: Uri, workDir: File, result: Result
+    ) {
+        val files = items.mapNotNull { (uri, name) ->
+            runCatching { Storage.copyToCache(ctx, uri, workDir, name) }
+                .onFailure { log("  [!] Cannot read $name: ${it.message}") }
+                .getOrNull()
+        }
+        if (files.isEmpty()) { result.failed += items.size; result.total += items.size; return }
+
+        val outFiles = processImageBatch(files, provider, lang, workDir)
+        result.total += files.size
+        for ((i, f) in outFiles.withIndex()) {
+            if (f == null) { result.failed++; continue }
+            val outName = Storage.baseName(files[i].name) + ".png"
+            val uri = runCatching {
+                Storage.writeToTree(
+                    ctx, outputTree, Langs.code(lang).uppercase(), outName, "image/png"
+                ) { os -> f.inputStream().use { it.copyTo(os) } }
+            }.getOrElse { e ->
+                log("  [!] Could not write to the chosen output folder: ${e.message}")
+                null
+            }
+            val keep = File(ctx.filesDir, "last_output/$outName")
+            keep.parentFile?.mkdirs()
+            runCatching { f.inputStream().use { i -> keep.outputStream().use { o -> i.copyTo(o) } } }
+            result.outputs.add(OutputItem(outName, uri, keep.absolutePath))
+            result.success++
+            log("  Saved: ${Langs.code(lang).uppercase()}/$outName")
+        }
+    }
+
+    private fun handlePdf(
+        uri: Uri, name: String, provider: LLMProvider, lang: String,
+        outputTree: Uri, workDir: File, result: Result
+    ) {
+        val pdf = Storage.copyToCache(ctx, uri, workDir, name)
+        log("  Extracting PDF pages...")
+        val pagesDir = File(workDir, "pages")
+        val pages = Storage.renderPdfPages(ctx, pdf, pagesDir) { done, total ->
+            if (done % 5 == 0 || done == total) log("  Extracted $done/$total pages")
+        }
+        if (pages.isEmpty()) { log("  [!] PDF has no pages."); result.failed++; result.total++; return }
+
+        val outFiles = processImageBatch(pages, provider, lang, workDir)
+        val valid = outFiles.filterNotNull()
+        result.total += pages.size
+        result.success += valid.size
+        result.failed += pages.size - valid.size
+
+        // The output is written even on cancel, so a stopped run still hands
+        // back the pages already finished instead of nothing at all.
+        if (valid.isNotEmpty()) {
+            log("  Saving final PDF in original page order...")
+            val outName = Storage.baseName(name) + ".pdf"
+            val outUri = runCatching {
+                Storage.writeToTree(
+                    ctx, outputTree, Langs.code(lang).uppercase(), outName, "application/pdf"
+                ) { os -> Storage.imagesToPdf(valid, cfg.maxImageSide, os) }
+            }.getOrElse { e ->
+                log("  [!] Could not write to the chosen output folder: ${e.message}")
+                null
+            }
+            val localCopy = File(ctx.filesDir, "last_output/$outName")
+            localCopy.parentFile?.mkdirs()
+            runCatching { localCopy.outputStream().use { Storage.imagesToPdf(valid, cfg.maxImageSide, it) } }
+            result.outputs.add(OutputItem(outName, outUri, localCopy.absolutePath))
+            log("  Saved: ${Langs.code(lang).uppercase()}/$outName")
+        }
+        log("[PDF] Completed! Success: ${valid.size}, Failed: ${pages.size - valid.size}, Total: ${pages.size}")
+    }
+
+    private fun handleArchive(
+        uri: Uri, name: String, ext: String, provider: LLMProvider, lang: String,
+        outputTree: Uri, workDir: File, result: Result
+    ) {
+        log("  Extracting archive...")
+        val extractDir = File(workDir, "extract")
+        val pages: List<File> = try {
+            if (ext in Storage.RAR_EXTS) {
+                val rar = Storage.copyToCache(ctx, uri, workDir, name)
+                Storage.extractRar(rar, extractDir)
+            } else {
+                ctx.contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input)
+                    Storage.extractZip(input, extractDir)
+                }
+            }
+        } catch (e: Exception) {
+            log("  [!] Extraction failed: ${e.message}")
+            result.failed++; result.total++
+            return
+        }.sortedWith(compareBy(Storage.naturalComparator) { it.name })
+
+        if (pages.isEmpty()) { log("  [!] No images found in archive."); result.failed++; result.total++; return }
+        log("  Found ${pages.size} images (sorted numerically).")
+
+        val outFiles = processImageBatch(pages, provider, lang, workDir)
+        val valid = outFiles.filterNotNull()
+        result.total += pages.size
+        result.success += valid.size
+        result.failed += pages.size - valid.size
+
+        // The output is written even on cancel, so a stopped run still hands
+        // back the pages already finished instead of nothing at all.
+        if (valid.isNotEmpty()) {
+            log("  Combining translated images into PDF...")
+            val outName = Storage.baseName(name) + ".pdf"
+            val outUri = runCatching {
+                Storage.writeToTree(
+                    ctx, outputTree, Langs.code(lang).uppercase(), outName, "application/pdf"
+                ) { os -> Storage.imagesToPdf(valid, cfg.maxImageSide, os) }
+            }.getOrElse { e ->
+                log("  [!] Could not write to the chosen output folder: ${e.message}")
+                null
+            }
+            val localCopy = File(ctx.filesDir, "last_output/$outName")
+            localCopy.parentFile?.mkdirs()
+            runCatching { localCopy.outputStream().use { Storage.imagesToPdf(valid, cfg.maxImageSide, it) } }
+            result.outputs.add(OutputItem(outName, outUri, localCopy.absolutePath))
+            log("  Saved: ${Langs.code(lang).uppercase()}/$outName")
+        }
+        log("[Archive] Completed! Success: ${valid.size}, Failed: ${pages.size - valid.size}, Total: ${pages.size}")
+    }
+
+    // ------------------------------------------------------------------
+    // Core batch (process_image_batch)
+    // ------------------------------------------------------------------
+
+    /** One physical output page; may consist of several split parts. */
+    private class PageUnit(val srcName: String, val parts: MutableList<PartEntry> = mutableListOf())
+
+    private class PartEntry(
+        val file: File,
+        val width: Int,
+        val height: Int,
+        val boxes: List<IntArray>,
+        val translations: MutableMap<String, String> = mutableMapOf(),
+        var failed: Boolean = false,
+        /**
+         * Warna terukur milik bagian halaman INI.
+         *
+         * Ronde 16: dulu warna disimpan di satu peta milik Pipeline yang
+         * dibersihkan tiap kali detectBoxes() dipanggil. Karena deteksi
+         * berjalan di pass 1 untuk SEMUA halaman, sementara penggambaran baru
+         * terjadi di pass 3, isi peta itu selalu milik halaman terakhir saat
+         * halaman mana pun digambar. Akibatnya satu-satunya halaman yang
+         * pernah mendapat warna aslinya adalah halaman terakhir; sisanya jatuh
+         * ke Palette.DEFAULT alias putih/hitam. Menyimpannya bersama bagian
+         * halamannya membuat warna hidup selama data halaman itu hidup.
+         */
+        val warna: Map<String, Palette.Colors> = emptyMap(),
+        /**
+         * Kunci kotak teks-di-luar-balon milik bagian halaman INI.
+         *
+         * Ronde 18 — bug kembar dari warna di atas, dan yang ini merusak
+         * gambar. Penandanya dulu satu HashSet milik Pipeline yang tidak
+         * pernah di-clear() sama sekali, sementara kuncinya hanyalah
+         * "x1,y1,x2,y2" dalam piksel mentah tanpa identitas halaman. Sekali
+         * sebuah teks lepas terdaftar di halaman N, setiap kotak berkoordinat
+         * sama di halaman N+1, N+2, ... ikut dianggap teks lepas dan dikirim
+         * ke LaMa. Balon yang seharusnya cukup diisi putih malah dihapus
+         * beserta artwork di baliknya, menyisakan bercak buram bertepi
+         * melengkung (gabungan banyak Rect ber-FEATHER 16 px) — persis yang
+         * dilaporkan pengguna. Tabrakan koordinat sama sekali tidak langka:
+         * webtoon memakai lebar tetap dan penempatan balon yang berulang.
+         *
+         * Menyimpannya bersama bagian halamannya membuat penanda ini mati
+         * bersama halamannya, sehingga tidak bisa bocor ke halaman lain.
+         */
+        val lepas: Set<String> = emptySet()
+    )
+
+    /** A bubble crop parked on disk until its mosaic request is built. */
+    private class PendingCrop(val file: File, val unitIdx: Int, val partIdx: Int, val boxIdx: Int)
+
+    /**
+     * Multi-page mosaic batching. Page bitmaps and bubble crops are streamed
+     * through disk so peak memory stays at roughly one page plus one chunk,
+     * which is what makes a 200-page archive survive on a real phone.
+     */
+    private fun processImageBatch(
+        pages: List<File>, provider: LLMProvider, lang: String, workDir: File
+    ): List<File?> {
+        val total = pages.size
+        log("[Multi-Page Batch] Processing $total page(s)...")
+
+        val cropDir = File(workDir, "crops").apply { mkdirs() }
+        val partDir = File(workDir, "parts").apply { mkdirs() }
+        val units = ArrayList<PageUnit>()
+        val pending = ArrayList<PendingCrop>()
+
+        // ---- Pass 1: detect bubbles, dump crops to disk ----
+        for ((pIdx, file) in pages.withIndex()) {
+            if (cancelled) {
+                // Stop detecting, but do NOT discard the rest of the chapter.
+                // Every page not reached yet is queued as a pass-through unit so
+                // it still lands in the output untranslated, instead of being
+                // counted as a failure. Pressing Stop used to produce
+                // "Success: 0, Failed: 59" for exactly this reason.
+                for (rIdx in pIdx until total) {
+                    val rest = PageUnit(pages[rIdx].name)
+                    rest.parts.add(PartEntry(pages[rIdx], 0, 0, emptyList()))
+                    units.add(rest)
+                }
+                log("  [Stopped] ${total - pIdx} page(s) not processed — saved in the original language.")
+                break
+            }
+            progress(pIdx, total)
+
+            val unit = PageUnit(file.name)
+            units.add(unit)
+
+            val page = Storage.decodeBitmap(file, cfg.maxImageSide)
+            if (page == null) {
+                log("  [!] Failed to read ${file.name}")
+                unit.parts.add(PartEntry(file, 0, 0, emptyList(), failed = true))
+                continue
+            }
+
+            // Auto-split wide double-page spreads (right-to-left reading order).
+            val splits = splitLandscape(page)
+            val partBitmaps: List<Bitmap>
+            if (splits != null) {
+                val r = page.width.toFloat() / page.height.toFloat()
+                log("  [Auto-Split] Wide page (ratio ${"%.2f".format(r)}) split into ${splits.size} parts.")
+                partBitmaps = splits
+                page.recycle()
+            } else {
+                partBitmaps = listOf(page)
+            }
+
+            for ((partIdx, bmp) in partBitmaps.withIndex()) {
+                // An unsplit page is already on disk: re-encoding a 1080x11700
+                // strip to PNG here (and decoding it again in pass 3) cost
+                // seconds per page and produced a byte-identical picture.
+                val partFile = if (splits == null) file
+                else File(partDir, "u%04d_p%02d.png".format(pIdx, partIdx)).also {
+                    Storage.savePng(bmp, it)
+                }
+
+                val boxes = detectBoxes(bmp)
+                // Warna diukur saat deteksi, jadi salin sekarang: peta milik
+                // Pipeline akan ditimpa oleh halaman berikutnya (ronde 16).
+                unit.parts.add(
+                    PartEntry(
+                        partFile, bmp.width, bmp.height, boxes,
+                        warna = HashMap(warnaKotak),
+                        lepas = HashSet(teksLepasKotak)
+                    )
+                )
+
+                for ((bIdx0, box) in boxes.withIndex()) {
+                    val crop = buildCrop(bmp, box, boxes) ?: continue
+                    val cropFile = File(cropDir, "c%04d_%02d_%03d.png".format(pIdx, partIdx, bIdx0))
+                    Storage.savePng(crop, cropFile)
+                    crop.recycle()
+                    pending.add(PendingCrop(cropFile, pIdx, partIdx, bIdx0 + 1))
+                }
+                bmp.recycle()
+            }
+
+            val found = unit.parts.sumOf { it.boxes.size }
+            log("  [${pIdx + 1}/$total] ${file.name}: $found speech bubble(s)")
+        }
+
+        log("[Multi-Page Batch] Extracted ${pending.size} speech bubbles across $total pages.")
+
+        // ---- Pass 2: mosaic + translate ----
+        if (pending.isNotEmpty() && !cancelled) {
+            val maxPer = cfg.maxBubblesPerRequest
+            val chunks = pending.chunked(maxPer)
+            log("[Multi-Page Batch] Stitching into ${chunks.size} mosaic request(s) (max $maxPer bubbles/request)...")
+
+            val numberPaint = renderer.mosaicNumberPaint()
+
+            for ((cIdx, chunk) in chunks.withIndex()) {
+                if (cancelled) break
+                progress(cIdx, chunks.size)
+
+                val idMapping = HashMap<String, PendingCrop>()
+                val crops = ArrayList<Mosaic.Crop>()
+                for ((i, pc) in chunk.withIndex()) {
+                    val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
+                    val localId = (i + 1).toString()
+                    idMapping[localId] = pc
+                    crops.add(Mosaic.Crop(localId, bmp))
+                }
+                if (crops.isEmpty()) continue
+
+                val shrunk = Mosaic.shrinkIfTooTall(crops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20)
+                val mosaic = Mosaic.build(shrunk, cfg, numberPaint)
+
+                val originals = crops.map { it.bitmap }
+                shrunk.forEach { if (it.bitmap !in originals) it.bitmap.recycle() }
+                originals.forEach { it.recycle() }
+
+                if (cfg.konteksHalaman && pageContext.size > 0) {
+                    log("  [i] Konteks: ${pageContext.size} halaman sebelumnya disertakan.")
+                }
+                log("  [Request ${cIdx + 1}/${chunks.size}] Translating ${shrunk.size} bubbles with ${provider.providerName}...")
+                val translations = translateMosaic(mosaic, provider, lang)
+                mosaic.recycle()
+
+                if (translations.isEmpty()) {
+                    if (cancelled) {
+                        log("  [!] Request ${cIdx + 1} stopped before it returned.")
+                    } else {
+                        log("  [!] No translation returned for request ${cIdx + 1} " +
+                            "(${shrunk.size} bubble(s) left untranslated).")
+                    }
+                    continue
+                }
+                val diterima = HashMap<String, String>(translations)
+
+                // Model kadang membalas hanya sebagian nomor. Dulu sisanya
+                // dibiarkan dalam bahasa asli tanpa penjelasan, padahal
+                // deteksi dan potongannya sudah dibayar. Minta ulang khusus
+                // nomor yang hilang, sekali, sebelum menyerah.
+                val hilang = idMapping.keys.filter { it !in diterima }
+                if (hilang.isNotEmpty() && !cancelled) {
+                    log("  [!] ${hilang.size} nomor tidak dijawab model, meminta ulang...")
+                    val ulangCrops = ArrayList<Mosaic.Crop>()
+                    for (id in hilang) {
+                        val pc = idMapping[id] ?: continue
+                        val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
+                        ulangCrops.add(Mosaic.Crop(id, bmp))
+                    }
+                    if (ulangCrops.isNotEmpty()) {
+                        val ulangShrunk = Mosaic.shrinkIfTooTall(
+                            ulangCrops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20
+                        )
+                        val ulangMosaic = Mosaic.build(ulangShrunk, cfg, numberPaint)
+                        val asli = ulangCrops.map { it.bitmap }
+                        ulangShrunk.forEach { if (it.bitmap !in asli) it.bitmap.recycle() }
+                        asli.forEach { it.recycle() }
+                        val tambahan = runCatching {
+                            translateMosaic(ulangMosaic, provider, lang)
+                        }.getOrElse { emptyMap() }
+                        ulangMosaic.recycle()
+                        for ((id, text) in tambahan) {
+                            if (id in idMapping && id !in diterima) diterima[id] = text
+                        }
+                        val masihHilang = idMapping.keys.count { it !in diterima }
+                        if (masihHilang > 0) {
+                            log("  [!] $masihHilang balon tetap tidak dijawab setelah diminta ulang.")
+                        } else {
+                            log("  [OK] Semua nomor yang tertinggal berhasil dilengkapi.")
+                        }
+                    }
+                }
+
+                for ((localId, text) in diterima) {
+                    val pc = idMapping[localId] ?: continue
+                    units.getOrNull(pc.unitIdx)?.parts?.getOrNull(pc.partIdx)
+                        ?.translations?.put(pc.boxIdx.toString(), text)
+                }
+
+                // Catat ke riwayat, dikelompokkan per halaman sumber: satu
+                // mosaik bisa memuat balon dari beberapa halaman sekaligus.
+                if (cfg.konteksHalaman) {
+                    val perHalaman = LinkedHashMap<String, MutableList<String>>()
+                    for ((localId, text) in diterima) {
+                        val pc = idMapping[localId] ?: continue
+                        val nama = units.getOrNull(pc.unitIdx)?.srcName ?: continue
+                        perHalaman.getOrPut(nama) { mutableListOf() }.add(text)
+                    }
+                    for ((nama, baris) in perHalaman) pageContext.add(nama, baris)
+                }
+            }
+        }
+
+        // ---- Pass 3: render text back, one page at a time ----
+        //
+        // This pass is deliberately NOT aborted on cancel. Everything expensive
+        // (detection + network) has already been paid for, so throwing the
+        // result away would waste the whole run — which is exactly what used to
+        // happen when the user pressed Stop during a rate-limit wait. When
+        // cancelled we still emit every page: translated ones carry their text,
+        // untranslated ones are passed through unchanged so the output stays a
+        // complete, readable chapter.
+        val outDir = File(workDir, "out").apply { mkdirs() }
+        val outputs = arrayOfNulls<File>(total)
+        if (cancelled) log("[Stopped] Saving the ${units.count { u -> u.parts.any { it.translations.isNotEmpty() } }} page(s) already translated...")
+
+        for ((pIdx, unit) in units.withIndex()) {
+            if (unit.parts.isEmpty() || unit.parts.all { it.failed }) continue
+            progress(pIdx, total)
+
+            val rendered = ArrayList<Bitmap>()
+            var drawn = 0
+            for (part in unit.parts) {
+                if (part.failed) continue
+                val bmp = Storage.decodeBitmap(part.file, cfg.maxImageSide) ?: continue
+
+                // Hapus teks asli di luar balon dengan LaMa SEBELUM menggambar
+                // terjemahan: isi-putih di atas artwork meninggalkan kotak
+                // putih yang merusak screentone dan siluet di baliknya.
+                if (cfg.inpaintLama) {
+                    val sasaran = sasaranInpaint(
+                        part.boxes, part.translations, part.lepas, bmp.width, bmp.height
+                    )
+                    if (sasaran.isNotEmpty()) {
+                        val seam = inpaintOverride
+                        val ip = if (seam != null) null else inpaint()
+                        if (seam != null || ip != null) {
+                            val t0 = System.currentTimeMillis()
+                            val n = runCatching {
+                                if (seam != null) seam(sasaran)
+                                else ip!!.erase(bmp, sasaran) { m -> log(m) }
+                            }.getOrElse { e -> log("  [!] Inpaint dilewati: ${e.message}"); 0 }
+                            if (n > 0) {
+                                val dt = (System.currentTimeMillis() - t0) / 1000.0
+                                log("  [i] Inpaint: ${sasaran.size} teks lepas dibersihkan " +
+                                    "dalam $n petak (${"%.1f".format(dt)} s).")
+                            }
+                        }
+                    }
+                }
+
+                val canvas = Canvas(bmp)
+                for ((numStr, text) in part.translations) {
+                    val bIdx = numStr.toIntOrNull() ?: continue
+                    val box = part.boxes.getOrNull(bIdx - 1) ?: continue
+                    if (drawText(canvas, bmp, box, text, lang, part.warna)) drawn++
+                }
+                rendered.add(bmp)
+            }
+            if (rendered.isEmpty()) continue
+
+            val finalBmp = if (rendered.size == 1) rendered[0] else hconcatReversed(rendered)
+            val outFile = File(outDir, "p%04d_%s.png".format(pIdx, Storage.baseName(unit.srcName)))
+            Storage.savePng(finalBmp, outFile)
+            outputs[pIdx] = outFile
+
+            if (finalBmp !in rendered) finalBmp.recycle()
+            rendered.forEach { runCatching { if (!it.isRecycled) it.recycle() } }
+            log("  Rendered ${unit.srcName} ($drawn bubble(s) translated)")
+
+            // Rekam halaman ini ke proyek SEBELUM cropDir/partDir dihapus.
+            // Yang disalin adalah berkas sumber yang MASIH BERSIH, bukan bmp
+            // yang barusan digambari: editor harus bisa menggambar ulang dari
+            // nol berkali-kali, dan menggambar di atas hasil gambar akan
+            // menumpuk teks lama di bawah teks baru.
+            rekamHalaman(unit)
+        }
+
+        cropDir.deleteRecursively()
+        partDir.deleteRecursively()
+
+        val translatedBubbles = units.sumOf { u -> u.parts.sumOf { it.translations.size } }
+        val missed = pending.size - translatedBubbles
+        if (missed > 0) {
+            log("[Ringkasan] $translatedBubbles/${pending.size} balon diterjemahkan. " +
+                "$missed balon dibiarkan dalam bahasa asli" +
+                (if (cancelled) " karena proses dihentikan." else " karena provider tidak menjawab.") +
+                " Halaman tetap tersimpan — jalankan ulang untuk melengkapi sisanya.")
+        }
+        return outputs.toList()
+    }
+
+    // ------------------------------------------------------------------
+    // Steps
+    // ------------------------------------------------------------------
+
+    /**
+     * Detects bubbles on one page.
+     *
+     * Tall webtoon strips are scanned in overlapping vertical windows. The
+     * detector letterboxes whatever it is given into 640x640, so handing it a
+     * 1080x11700 strip squashes every bubble into a couple of pixels and it
+     * returns nothing — which is why long chapters came back with only a
+     * handful of bubbles. Windows are detected independently and their boxes
+     * are mapped back into full-page coordinates.
+     */
+    private fun detectBoxes(bmp: Bitmap): List<IntArray> {
+        warnaKotak.clear()
+        teksLepasKotak.clear()
+
+        // Jalur baru: detektor komik tiga-kelas. Kalau tersedia, dia yang
+        // memimpin — balon, teks-dalam-balon dan teks-luar-balon didapat dari
+        // satu kali inferensi, jadi rantai heuristik lama tidak diperlukan.
+        // Seam uji: memasang detectorOverride berarti tes itu sengaja
+        // menguji jalur YOLO lama, jadi RT-DETR tidak boleh mengambil alih.
+        val jalurLamaDipaksa = detectorOverride != null && rtDetectorOverride == null
+        if (cfg.detektorRtdetr && !jalurLamaDipaksa) {
+            val viaRt = detectViaRtdetr(bmp)
+            if (viaRt != null) return viaRt
+        }
+
+        val windows = DetectMath.tileWindows(bmp.width, bmp.height)
+
+        val tiled = windows.size > 1
+
+        val raw: List<IntArray> = if (!tiled) {
+            BoxUtils.sanitize(detectRaw(bmp), bmp.width, bmp.height)
+        } else {
+            val acc = ArrayList<IntArray>()
+            for (w in windows) {
+                if (cancelled) break
+                val h = w[1] - w[0]
+                if (h <= 0) continue
+                val slice = Bitmap.createBitmap(bmp, 0, w[0], bmp.width, h)
+                try {
+                    // Bersihkan SETIAP jendela sendiri-sendiri. dropFakeGiants
+                    // membandingkan luas antar kotak: kalau dijalankan setelah
+                    // semua jendela digabung, balon besar di satu jendela akan
+                    // menelan balon kecil yang sah di jendela lain. Pada halaman
+                    // 1080x2400 itu memangkas 6 balon jadi 1.
+                    var wb = BoxUtils.sanitize(detectRaw(slice), slice.width, slice.height)
+                    wb = BoxUtils.dropFakeGiants(wb)
+                    wb = BoxUtils.mergeOverlapping(wb)
+                    for (b in wb) {
+                        acc.add(intArrayOf(b[0], b[1] + w[0], b[2], b[3] + w[0]))
+                    }
+                } finally {
+                    if (slice !== bmp) slice.recycle()
+                }
+            }
+            DetectMath.dedupeTiled(acc)
+        }
+
+        // Untuk halaman berjendela, giants/merge sudah dikerjakan per jendela.
+        var boxes = if (tiled) raw else BoxUtils.mergeOverlapping(BoxUtils.dropFakeGiants(raw))
+        boxes = BoxUtils.dropAbsurd(boxes, bmp.width, bmp.height)
+        if (cfg.filterSfxAktif) boxes = BoxUtils.dropSfxAndArt(bmp, boxes, cfg.sfxMode)
+
+        // Tahap kedua: teks yang tidak berada di dalam balon mana pun.
+        // eyecypy.onnx hanya dilatih mencari balon, jadi narasi kotak, teks
+        // latar dan papan nama tidak pernah terlihat olehnya. Wilayah teks
+        // hanya DITAMBAHKAN; kotak balon tidak pernah diubah atau dibuang,
+        // sehingga paritas dengan cypy Python tetap terjaga saat sakelar mati.
+        if (cfg.ocrTeksLepas && !cancelled) {
+            val mentah = textDetectorOverride?.invoke(bmp)
+                ?: ocr()?.let { runCatching { it.detect(bmp) }.getOrElse { emptyList() } }
+                ?: emptyList()
+            if (mentah.isNotEmpty()) {
+                val tambahan = TextRegionMath.refine(mentah, boxes, bmp.width, bmp.height)
+                val bersih = if (cfg.filterSfxAktif) {
+                    BoxUtils.dropSfxAndArt(bmp, tambahan, cfg.sfxMode)
+                } else tambahan
+                if (bersih.isNotEmpty()) {
+                    log("  [+] ${bersih.size} teks di luar balon ikut diterjemahkan.")
+                    for (b in bersih) teksLepasKotak.add(kunciKotak(b))
+                    boxes = boxes + bersih
+                }
+            }
+        }
+
+        // Reading order must follow the page, top to bottom.
+        return boxes.sortedWith(compareBy({ it[1] }, { it[0] }))
+    }
+
+    /**
+     * Deteksi memakai RT-DETR-v2 tiga-kelas.
+     *
+     * Mengembalikan null bila model tidak tersedia, sehingga pemanggil jatuh
+     * kembali ke jalur YOLOv8 lama.
+     *
+     * Perbedaan penting dengan jalur lama:
+     *  - Tidak ada penjendelaan. Uji atas strip 1080x11700 (15 balon
+     *    sebenarnya) menghasilkan tepat 15 balon dalam satu inferensi, karena
+     *    model dilatih dengan webtoon panjang yang dipecah vertikal.
+     *  - Tidak ada dropFakeGiants / dropSfxAndArt. Filter itu ada untuk
+     *    membersihkan false positive YOLO; RT-DETR tidak memproduksinya
+     *    (contoh terukur: pada satu tangkapan layar non-manga YOLO memberi 7
+     *    balon palsu, RT-DETR memberi 0).
+     *  - Warna tiap balon diukur di sini dan disimpan untuk tahap render.
+     */
+    private fun detectViaRtdetr(bmp: Bitmap): List<IntArray>? {
+        val dets = rtDetectorOverride?.invoke(bmp)
+            ?: rt()?.let { d -> runCatching { d.detect(bmp) }.getOrElse { null } }
+            ?: return null
+
+        val bubbles = ArrayList<IntArray>()
+        val textIn = ArrayList<IntArray>()
+        val textFree = ArrayList<IntArray>()
+        for (d in dets) when (d.cls) {
+            RtDetector.CLASS_BUBBLE -> bubbles.add(d.box)
+            RtDetector.CLASS_TEXT_BUBBLE -> textIn.add(d.box)
+            RtDetector.CLASS_TEXT_FREE -> textFree.add(d.box)
+        }
+
+        var balon = BoxUtils.sanitize(bubbles, bmp.width, bmp.height)
+        balon = BoxUtils.mergeOverlapping(balon)
+        balon = BoxUtils.dropAbsurd(balon, bmp.width, bmp.height)
+
+        // Pasangkan kotak teks ke balonnya, lalu ukur warna.
+        val pasangan = RtMath.pairTextToBubbles(balon, textIn)
+        if (cfg.warnaOtomatis) {
+            for (i in balon.indices) {
+                val c = runCatching { Palette.sample(bmp, balon[i], pasangan[i]) }
+                    .getOrDefault(Palette.DEFAULT)
+                if (c.diukur) warnaKotak[kunciKotak(balon[i])] = c
+            }
+        }
+
+        var hasil: List<IntArray> = balon
+
+        // Teks di luar balon: langsung dari model, tanpa tahap OCR terpisah.
+        if (cfg.ocrTeksLepas) {
+            val lepas = RtMath.refineFreeText(
+                BoxUtils.sanitize(textFree, bmp.width, bmp.height),
+                balon, bmp.width, bmp.height
+            )
+            if (lepas.isNotEmpty()) {
+                log("  [+] ${lepas.size} teks di luar balon ikut diterjemahkan.")
+                for (b in lepas) teksLepasKotak.add(kunciKotak(b))
+                hasil = hasil + lepas
+            }
+        }
+
+        val jumlahGelap = warnaKotak.count { Palette.isDark(it.value.background) }
+        log("  [i] RT-DETR: ${balon.size} balon, ${textIn.size} teks-dalam, " +
+            "${textFree.size} teks-luar" +
+            (if (jumlahGelap > 0) ", $jumlahGelap balon gelap dipertahankan" else ""))
+
+        return hasil.sortedWith(compareBy({ it[1] }, { it[0] }))
+    }
+
+    /**
+     * Sesi inpaint dibuat sekali dan dipakai ulang; memuat model 93 MB untuk
+     * tiap halaman akan mendominasi waktu proses. Modelnya diunduh terpisah
+     * (tidak dibundel di APK), jadi ketiadaannya adalah keadaan normal:
+     * kembalikan null dan alur lanjut memakai isi-putih.
+     */
+    private fun inpaint(): Inpainter? {
+        inpainter?.let { return it }
+        if (!Inpainter.tersedia(ctx)) {
+            log("  [!] Model inpaint belum diunduh (Setelan > Unduh model), memakai isi-putih.")
+            return null
+        }
+        return runCatching { Inpainter(ctx).also { inpainter = it } }
+            .getOrElse { log("  [!] Inpaint tidak bisa dimuat: ${it.message}"); null }
+    }
+
+    private fun kunciKotak(b: IntArray): String = "${b[0]},${b[1]},${b[2]},${b[3]}"
+
+    /**
+     * Apakah kotak ini akan DITOLAK oleh drawText karena bentuknya?
+     *
+     * Kotak yang sangat lebar dan gepeng hampir selalu salah deteksi: garis
+     * panel, bilah kredit penerjemah, atau sapuan latar. Menggambar teks di
+     * situ merusak halaman, jadi drawText menolaknya.
+     *
+     * Aturan ini WAJIB dipakai bersama oleh penghapus dan penggambar. Dulu
+     * hanya drawText yang memakainya sementara inpaint menghapus semua teks
+     * lepas tanpa saring, sehingga kotak di celah itu dihapus LaMa tapi tidak
+     * pernah digambari ulang - hasilnya bercak buram di atas artwork tanpa
+     * teks apa pun. Menghapus sesuatu hanya boleh kalau kita memang berniat
+     * menggambar penggantinya.
+     */
+    private fun bentukDitolak(box: IntArray, imgW: Int, imgH: Int): Boolean {
+        val w = max(1, box[2] - box[0])
+        val h = max(1, box[3] - box[1])
+        val ratio = w.toFloat() / h.toFloat()
+        val areaRatio = (w.toFloat() * h.toFloat()) / max(1, imgW * imgH).toFloat()
+        if (ratio >= 3.2f && w >= imgW * 0.35f) return true
+        if (areaRatio >= 0.035f && ratio >= 2.8f) return true
+        return false
+    }
+
+    /**
+     * Kotak yang benar-benar akan dihapus LaMa: teks lepas yang punya
+     * terjemahan DAN yang penggantinya pasti tergambar.
+     */
+    private fun sasaranInpaint(
+        boxes: List<IntArray>, translations: Map<String, String>,
+        lepas: Set<String>, imgW: Int, imgH: Int
+    ): List<IntArray> = translations.mapNotNull { (numStr, teks) ->
+        val bIdx = numStr.toIntOrNull() ?: return@mapNotNull null
+        val box = boxes.getOrNull(bIdx - 1) ?: return@mapNotNull null
+        // Teks kosong / SKIP juga ditolak drawText: jangan hapus apa pun.
+        val t = teks.trim()
+        if (t.isEmpty() || t.uppercase() == "SKIP") return@mapNotNull null
+        if (kunciKotak(box) !in lepas) return@mapNotNull null
+        if (bentukDitolak(box, imgW, imgH)) return@mapNotNull null
+        box
+    }
+
+    private fun detectRaw(bmp: Bitmap): List<IntArray> =
+        detectorOverride?.invoke(bmp) ?: yolo().predictStages(bmp)
+
+    private fun buildCrop(bmp: Bitmap, box: IntArray, all: List<IntArray>): Bitmap? {
+        val boxW = max(1, box[2] - box[0])
+        val boxH = max(1, box[3] - box[1])
+        val padX = max(cfg.minPad, (boxW * cfg.padXRatio).toInt())
+        val padY = max(cfg.minPad, (boxH * cfg.padYRatio).toInt())
+
+        val c = BoxUtils.roomyCrop(box, all, bmp.width, bmp.height, padX, padY, cfg.overlapBatasCrop)
+        val cw = c[2] - c[0]; val ch = c[3] - c[1]
+        if (cw <= 0 || ch <= 0) return null
+
+        var crop = Bitmap.createBitmap(bmp, c[0], c[1], cw, ch)
+        if (cfg.maskAreaLuarBox) {
+            val margin = Mosaic.effectiveMaskMargin(
+                boxW, boxH, cfg.maskMargin, cfg.maskMarginBoxRatio, cfg.maskMarginMax
+            )
+            val masked = Mosaic.maskOutsideMainBox(
+                crop, c[0], c[1], box[0], box[1], box[2], box[3], margin
+            )
+            if (masked !== crop) { crop.recycle(); crop = masked }
+        }
+        val scaled = Mosaic.scale(crop, cfg.skalaPotonganMosaik)
+        if (scaled !== crop) crop.recycle()
+        return scaled
+    }
+
+    private fun translateMosaic(mosaic: Bitmap, provider: LLMProvider, lang: String): Map<String, String> {
+        if (!provider.validateApiKey()) throw ApiKeyException()
+        val prompt = buildPrompt(lang)
+
+        val raw = try {
+            rateLimiter.executeWithRetry(provider.providerName) {
+                provider.translateImage(mosaic, prompt)
+            }
+        } catch (ake: ApiKeyException) {
+            throw ake
+        } catch (ex: Exception) {
+            log("  [!] ${provider.providerName} request failed: ${ex.message}")
+            return emptyMap()
+        } ?: return emptyMap()
+
+        return try {
+            val obj = JSONObject(BoxUtils.cleanJson(raw))
+            val map = LinkedHashMap<String, String>()
+            for (key in obj.keys()) map[key] = obj.optString(key, "")
+            map
+        } catch (e: Exception) {
+            log("  [!] Could not parse translation JSON: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    /** Re-applies the write-back guards and draws the translated text. */
+    /**
+     * Salin satu halaman beserta metadatanya ke proyek yang sedang direkam.
+     *
+     * Gagal menyalin TIDAK boleh menggagalkan proses: proyek adalah fitur
+     * kenyamanan, sementara keluaran gambar adalah hasil yang dibayar
+     * pengguna. Karena itu seluruh badannya dibungkus runCatching.
+     */
+    private fun rekamHalaman(unit: PageUnit) {
+        val prj = project ?: return
+        runCatching {
+            val dir = File(prj.dir(ctx), "pages").apply { mkdirs() }
+            for (part in unit.parts) {
+                if (part.failed || part.boxes.isEmpty()) continue
+                val nama = "p%04d.png".format(prj.pages.size)
+                val dst = File(dir, nama)
+                part.file.copyTo(dst, overwrite = true)
+
+                val page = Project.Page(
+                    srcName = unit.srcName,
+                    imagePath = "pages/$nama",
+                    width = part.width,
+                    height = part.height
+                )
+                page.boxes.addAll(part.boxes)
+                page.translations.putAll(part.translations)
+                page.colors.putAll(part.warna)
+                page.freeText.addAll(part.lepas)
+                prj.pages.add(page)
+            }
+        }.onFailure { log("  [!] Proyek tidak bisa disimpan: ${it.message}") }
+    }
+
+    /**
+     * Gambar ulang SATU halaman proyek memakai terjemahan yang tersimpan.
+     *
+     * Inilah inti mode koreksi manual: tidak ada deteksi, tidak ada panggilan
+     * jaringan, hanya piksel. Selalu dimulai dari salinan halaman bersih,
+     * sehingga menyunting balon yang sama sepuluh kali tetap menghasilkan
+     * gambar yang sama seperti menyuntingnya sekali.
+     *
+     * @return bitmap hasil, atau null bila halamannya tidak bisa dibaca.
+     */
+    fun renderProjectPage(prj: Project, page: Project.Page): Bitmap? {
+        val src = prj.pageFile(ctx, page)
+        val bmp = Storage.decodeBitmap(src, cfg.maxImageSide) ?: return null
+
+        if (cfg.inpaintLama) {
+            val sasaran = sasaranInpaint(
+                page.boxes, page.translations, page.freeText, bmp.width, bmp.height
+            )
+            if (sasaran.isNotEmpty()) {
+                val seam = inpaintOverride
+                val ip = if (seam != null) null else inpaint()
+                if (seam != null || ip != null) {
+                    runCatching {
+                        if (seam != null) seam(sasaran)
+                        else ip!!.erase(bmp, sasaran) { m -> log(m) }
+                    }.onFailure { log("  [!] Inpaint dilewati: ${it.message}") }
+                }
+            }
+        }
+
+        val canvas = Canvas(bmp)
+        for ((numStr, text) in page.translations) {
+            val bIdx = numStr.toIntOrNull() ?: continue
+            val box = page.boxes.getOrNull(bIdx - 1) ?: continue
+            drawText(canvas, bmp, box, text, prj.targetLanguage, page.colors)
+        }
+        return bmp
+    }
+
+    private fun drawText(
+        canvas: Canvas, bmp: Bitmap, box: IntArray, text0: String, lang: String,
+        warnaHalaman: Map<String, Palette.Colors> = emptyMap()
+    ): Boolean {
+        val text = text0.trim()
+        if (text.isEmpty() || text.uppercase() == "SKIP") return false
+
+        val (x1, y1, x2, y2) = listOf(box[0], box[1], box[2], box[3])
+        val w = max(1, x2 - x1)
+        val h = max(1, y2 - y1)
+        val ratio = w.toFloat() / h.toFloat()
+
+        // Aturan bentuk yang sama persis dipakai sasaranInpaint, supaya kotak
+        // yang ditolak di sini tidak pernah terlanjur dihapus LaMa.
+        if (bentukDitolak(box, bmp.width, bmp.height)) return false
+
+        val flat = ratio >= cfg.rasioBoxGepeng &&
+                w >= bmp.width * cfg.lebarBoxGepengRatio &&
+                h <= bmp.height * cfg.tinggiBoxGepengRatio
+
+        val usePatch = cfg.patchGepeng && flat
+        // Warna diukur saat deteksi (RT-DETR). Kalau kotak ini tidak punya
+        // entri - misalnya berasal dari jalur YOLO lama, atau sakelar warna
+        // dimatikan - Palette.DEFAULT mengembalikan perilaku putih/hitam.
+        val warna = if (cfg.warnaOtomatis) {
+            warnaHalaman[kunciKotak(box)] ?: Palette.DEFAULT
+        } else Palette.DEFAULT
+        renderer.drawInBubble(
+            canvas, bmp, text, x1, y1, x2, y2,
+            backgroundPatch = usePatch,
+            targetLanguage = lang,
+            maskMarginRatio = cfg.maskMarginRatio,
+            colors = warna
+        )
+        return true
+    }
+
+    /**
+     * Auto-split for landscape (double-page) images: splits right-to-left,
+     * translates each half, then recombines with hconcat order reversed.
+     */
+    fun splitLandscape(bmp: Bitmap): List<Bitmap>? {
+        val ratio = bmp.width.toFloat() / bmp.height.toFloat()
+        if (ratio <= 1.2f) return null
+        val parts = max(2, (ratio / 0.71f).roundToInt())
+        val splitWidth = bmp.width / parts
+        val out = ArrayList<Bitmap>()
+        for (i in 0 until parts) {
+            val xEnd = bmp.width - (i * splitWidth)
+            val xStart = if (i == parts - 1) 0 else xEnd - splitWidth
+            val w = xEnd - xStart
+            if (w <= 0) continue
+            out.add(Bitmap.createBitmap(bmp, xStart, 0, w, bmp.height))
+        }
+        return out
+    }
+
+    fun hconcatReversed(parts: List<Bitmap>): Bitmap {
+        val ordered = parts.reversed()
+        val targetH = ordered.maxOf { it.height }
+        val scaled = ordered.map {
+            if (it.height == targetH) it
+            else Bitmap.createScaledBitmap(it, (it.width * targetH / it.height), targetH, true)
+        }
+        val totalW = scaled.sumOf { it.width }
+        val out = Bitmap.createBitmap(totalW, targetH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(Color.WHITE)
+        var x = 0
+        for (b in scaled) {
+            canvas.drawBitmap(b, null, Rect(x, 0, x + b.width, targetH), Paint(Paint.FILTER_BITMAP_FLAG))
+            x += b.width
+        }
+        return out
+    }
+
+    // ------------------------------------------------------------------
+    // Prompt (ported verbatim from translate_mosaic)
+    // ------------------------------------------------------------------
+
+    /**
+     * Baca berkas glosarium sekali per proses. Kegagalan apa pun di sini tidak
+     * boleh menggagalkan terjemahan: glosarium adalah penyempurna, bukan
+     * syarat. Berkas yang hilang atau rusak hanya dilaporkan ke log.
+     */
+    private fun muatGlosarium() {
+        glossaryOverride?.let {
+            glossary = Glossary.budgetEntries(it)
+            if (glossary.isNotEmpty()) log("[i] Glosarium: ${glossary.size} istilah.")
+            return
+        }
+        glossary = emptyList()
+        val uriStr = cfg.glossaryUri
+        if (uriStr.isBlank()) return
+        try {
+            val teks = ctx.contentResolver.openInputStream(Uri.parse(uriStr))?.use {
+                it.readBytes().toString(Charsets.UTF_8)
+            }
+            if (teks == null) {
+                log("[!] Glosarium tidak bisa dibuka, dilewati.")
+                return
+            }
+            val hasil = Glossary.parse(teks)
+            glossary = Glossary.budgetEntries(hasil.entries)
+            when {
+                hasil.entries.isEmpty() ->
+                    log("[!] Glosarium kosong atau formatnya tidak dikenali, dilewati.")
+                else -> {
+                    log("[i] Glosarium: ${glossary.size} istilah dipakai" +
+                        (if (hasil.entries.size > glossary.size)
+                            " (dari ${hasil.entries.size}, dibatasi ${Glossary.MAX_ENTRIES})" else "") +
+                        ".")
+                    if (hasil.conflicts.isNotEmpty()) {
+                        log("[!] ${hasil.conflicts.size} istilah bentrok, dipakai yang pertama:")
+                        for (c in hasil.conflicts.take(5)) log("    $c")
+                    }
+                    if (hasil.rejected.isNotEmpty()) {
+                        log("[!] ${hasil.rejected.size} baris glosarium tidak terbaca.")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            log("[!] Glosarium gagal dibaca (${e.javaClass.simpleName}), dilewati.")
+        }
+    }
+
+    internal fun buildPrompt(lang0: String): String {
+        val lang = lang0.ifBlank { "Indonesian" }
+        val examples = mapOf(
+            "english" to ("Hello!" to "Mother... wait..."),
+            "indonesian" to ("Cepat bangun!" to "Ibu... tunggu..."),
+            "japanese" to ("早く起きて！" to "お母さん…待って…"),
+            "mandarin" to ("快点起床！" to "妈妈……等等……"),
+            "spanish" to ("¡Despierta rápido!" to "Madre... espera..."),
+            "portuguese" to ("Acorde rápido!" to "Mãe... espere..."),
+            "javanese" to ("Ndang tangi!" to "Ibu... enteni...")
+        )
+        val (ex1, ex3) = examples[lang.lowercase()] ?: examples["english"]!!
+
+        return buildString {
+            append("You are an accurate, literal manga translator from its original language to $lang. ")
+            append("The image contains several speech bubbles arranged vertically. ")
+            append("Each bubble is prefixed with a LARGE RED NUMBER on its left as its ID. \n\n")
+
+            append("MAIN TASK:\n")
+            append("Read the text in each bubble, then translate it into $lang, faithfully preserving the original meaning. \n\n")
+
+            append("VERTICAL READING RULES:\n")
+            append("1. Read vertical text from top to bottom. \n")
+            append("2. If there are multiple vertical columns, read the rightmost column first, then move left. \n")
+            append("3. Do not reverse column orders. \n")
+            append("4. Do not mix text between bubbles. \n\n")
+
+            append("TRANSLATION RULES:\n")
+            append("1. Translate literally and accurately. Do not make it overly polite, do not summarize, and do not invent content. \n")
+            append("2. Do not add subjects or objects not present in the original text. \n")
+            append("3. Do not alter the relationships between characters. \n")
+            append("4. If the text is rude, explicit, teasing, degrading, bashful, or begging, maintain that exact tone. \n")
+            append("5. If the text contains a question, the $lang output must also be a question. \n")
+            append("6. Do not create new sentences that sound unnatural if they are not in the original text. \n")
+            append("7. For long sentences, keep all parts of the meaning. Do not truncate. \n")
+            append("8. If unsure about some text, use [?] for that part. \n")
+            append("9. If the bubble only contains SFX, scribbles, is empty, or is background art and not a meaningful dialogue, reply with 'SKIP'. \n\n")
+
+            append("HONORIFICS RULE:\n")
+            append("1. If the original text contains Japanese honorifics (san, kun, chan, sama, senpai, sensei, etc.), keep them as-is in the translation. Do NOT translate honorifics. \n")
+            append("2. Examples: -san stays as -san, -kun stays as -kun, -chan stays as -chan. \n")
+            append("3. This applies even when translating to non-Japanese languages. \n\n")
+
+            append("SFX RULE:\n")
+            append("1. If a bubble contains ONLY sound effects (SFX) with no dialogue, reply with 'SKIP'. \n")
+            append("2. SFX examples: ドドド, ゴゴゴ, バキ, ギュウ, キラキラ, etc. \n")
+            append("3. If a bubble has BOTH dialogue and SFX, translate only the dialogue part. \n\n")
+
+            append("RETURN ALL IDs RULE:\n")
+            append("1. You MUST return a JSON entry for EVERY red ID number visible in the image. \n")
+            append("2. Do NOT skip any ID numbers. If ID 1, 2, 3, 4, 5 are visible, your JSON must contain all 5 keys. \n")
+            append("3. For IDs you cannot read or translate, use 'SKIP' as the value. \n")
+            append("4. This is critical - missing IDs will cause errors. \n\n")
+
+            // Glosarium ditaruh sesudah semua aturan lain dan tepat sebelum
+            // format keluaran: aturan yang paling dekat dengan akhir prompt
+            // cenderung paling dipatuhi, dan baris ini memang harus menang
+            // atas aturan honorifik di atasnya.
+            // Baca lewat override bila ada, bukan lewat field yang hanya terisi
+            // di dalam run(): dengan begitu seam tes benar-benar menguji jalur
+            // yang sama dengan produksi. promptSection sudah menerapkan batas
+            // jumlah istilahnya sendiri.
+            append(Glossary.promptSection(glossaryOverride ?: glossary))
+            if (cfg.konteksHalaman) append(pageContext.promptSection())
+
+            append("OUTPUT FORMAT:\n")
+            append("Provide the response ONLY in valid JSON without markdown formatting. \n")
+            append("Keys must be the red ID numbers as strings. \n")
+            append("Values must be the $lang translation or 'SKIP'. \n")
+            append("Example output: {\"1\": \"$ex1\", \"2\": \"SKIP\", \"3\": \"$ex3\", \"4\": \"SKIP\", \"5\": \"$ex1\"}")
+        }
+    }
+}

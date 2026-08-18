@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Surfaces: a layered near-black rather than one flat grey, so cards
+         read as raised without needing shadows on a dark theme. -->
+    <color name="bg">#0D0D11</color>
+    <color name="bg_elev">#15151B</color>
+    <color name="card">#1A1A22</color>
+    <color name="card_soft">#20202A</color>
+    <color name="widget">#101016</color>
+    <color name="border">#2A2A36</color>
+    <color name="border_focus">#3D3D4E</color>
+
+    <color name="accent">#EC4899</color>
+    <color name="accent_dark">#BE185D</color>
+    <color name="accent_soft">#33EC4899</color>
+
+    <color name="white">#FFFFFF</color>
+    <color name="text_primary">#F2F2F7</color>
+    <color name="text_secondary">#9C9CB0</color>
+    <color name="text_muted">#6C6C80</color>
+    <color name="gray">#9C9CB0</color>
+
+    <color name="dark_btn">#2A2A36</color>
+    <color name="dark_btn_hover">#3A3A48</color>
+
+    <color name="green">#4ADE80</color>
+    <color name="orange">#FBBF24</color>
+    <color name="red">#F87171</color>
+    <color name="blue">#60A5FA</color>
+</resources>
