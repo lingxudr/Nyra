@@ -1,6 +1,0 @@
-build/
-.gradle/
-apk/
-local.properties
-app/src/main/assets/*.onnx
-app/src/main/assets/*.ttf
