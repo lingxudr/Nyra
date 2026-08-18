@@ -10,7 +10,10 @@ import android.text.TextWatcher
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.SeekBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -363,6 +366,7 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
             renderGlosarium()
         }
         renderGlosarium()
+        renderFont()
 
         b.btnResetTweaks.setOnClickListener {
             cfg.maxBubblesPerRequest = 20
@@ -440,6 +444,29 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         }
         if (cfg.currentModel().isBlank()) { toast("Nama model masih kosong."); return }
 
+        // Peringatan font harus muncul SEBELUM terjemahan dibayar: bila
+        // perangkat ini memang tak sanggup menggambar aksara tujuan, pengguna
+        // baru menyadarinya setelah seluruh bab selesai diproses.
+        //
+        // perluUntukBahasa() bertanya ke perangkat lewat Paint.hasGlyph, bukan
+        // mengasumsikan dari cakupan font bawaan. Mayoritas ponsel menambal
+        // Hangul/Thai/Han dari font sistem, jadi di sana dialog ini memang
+        // tidak boleh muncul sama sekali.
+        val fontKurang = FontPack.perluUntukBahasa(this, cfg.targetLanguage)
+        if (fontKurang != null) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.font_judul)
+                .setMessage(getString(R.string.font_peringatan, cfg.targetLanguage))
+                .setPositiveButton(R.string.font_unduh) { _, _ -> unduhFont(fontKurang) }
+                .setNegativeButton(R.string.font_nanti) { _, _ -> mulaiTerjemahan(out) }
+                .show()
+            return
+        }
+
+        mulaiTerjemahan(out)
+    }
+
+    private fun mulaiTerjemahan(out: Uri) {
         b.tvLog.text = ""
         appendLog("Starting translation of ${inputUris.size} item(s)...")
         setRunning(true)
@@ -523,6 +550,117 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
                         Toast.LENGTH_LONG).show()
             }
             renderModel()
+        }
+    }
+
+    /** Paket font yang sedang diunduh; null bila tidak ada. */
+    @Volatile private var fontBerjalan: String? = null
+    @Volatile private var fontDibatalkan = false
+
+    /**
+     * Gambar ulang daftar paket font.
+     *
+     * Barisnya dibuat secara programatik, bukan tiga blok XML kembar: daftar
+     * paketnya ada di FontPack dan menyalinnya ke layout berarti menambah font
+     * keempat kelak butuh menyunting dua tempat yang gampang lupa disamakan.
+     */
+    private fun renderFont() {
+        val box = b.boxFont
+        box.removeAllViews()
+        for (item in FontPack.SEMUA) {
+            val baris = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            val ada = FontPack.terpasang(this, item)
+            val label = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                textSize = 12f
+                setTextColor(androidx.core.content.ContextCompat.getColor(
+                    this@MainActivity, if (ada) R.color.text_secondary else R.color.text_muted))
+                text = getString(
+                    if (ada) R.string.font_siap else R.string.font_belum,
+                    item.judul, ModelDownloader.mb(item.ukuran))
+            }
+            val tombol = com.google.android.material.button.MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            ).apply {
+                textSize = 11f
+                setText(
+                    when {
+                        fontBerjalan == item.id -> R.string.btn_batal_unduh
+                        ada -> R.string.font_hapus
+                        else -> R.string.font_unduh
+                    }
+                )
+                setOnClickListener {
+                    when {
+                        fontBerjalan == item.id -> fontDibatalkan = true
+                        ada -> {
+                            val bebas = FontPack.hapus(this@MainActivity, item)
+                            TextRenderer.invalidateFontCache()
+                            Toast.makeText(this@MainActivity,
+                                getString(R.string.font_terhapus, ModelDownloader.mb(bebas)),
+                                Toast.LENGTH_SHORT).show()
+                            renderFont()
+                        }
+                        else -> unduhFont(item)
+                    }
+                }
+            }
+            baris.addView(label)
+            baris.addView(tombol)
+            box.addView(baris)
+        }
+    }
+
+    /**
+     * Unduh satu paket font.
+     *
+     * Hanya satu unduhan boleh berjalan sekaligus: dua unduhan paralel di
+     * jaringan seluler saling memperlambat, dan pelaporan kemajuannya akan
+     * saling menimpa di baris yang sama.
+     */
+    private fun unduhFont(item: FontPack.Item) {
+        if (fontBerjalan != null) {
+            Toast.makeText(this, R.string.font_sedang_lain, Toast.LENGTH_SHORT).show()
+            return
+        }
+        fontBerjalan = item.id
+        fontDibatalkan = false
+        renderFont()
+        lifecycleScope.launch {
+            val hasil = withContext(Dispatchers.IO) {
+                ModelDownloader.unduhFont(
+                    applicationContext, item,
+                    progress = { sudah, total ->
+                        val persen = if (total > 0) (sudah * 100 / total).toInt() else 0
+                        runOnUiThread {
+                            (b.boxFont.getChildAt(FontPack.SEMUA.indexOf(item)) as? LinearLayout)
+                                ?.let { (it.getChildAt(0) as? TextView) }
+                                ?.text = getString(R.string.font_mengunduh, item.judul, persen)
+                        }
+                    },
+                    batal = { fontDibatalkan },
+                )
+            }
+            fontBerjalan = null
+            // Peta typeface di TextRenderer dibaca sekali saat dibuat, jadi
+            // tanpa pembatalan cache font baru tidak terpakai sampai proses
+            // aplikasi dimulai ulang — bug yang akan terlihat seperti unduhan
+            // yang tidak berpengaruh sama sekali.
+            TextRenderer.invalidateFontCache()
+            when (hasil) {
+                is ModelDownloader.Hasil.Sukses -> Toast.makeText(
+                    this@MainActivity, getString(R.string.font_selesai, item.judul),
+                    Toast.LENGTH_SHORT).show()
+                is ModelDownloader.Hasil.Dibatalkan -> Toast.makeText(
+                    this@MainActivity, R.string.model_dibatalkan, Toast.LENGTH_SHORT).show()
+                is ModelDownloader.Hasil.Gagal -> Toast.makeText(
+                    this@MainActivity, getString(R.string.font_gagal, hasil.pesan),
+                    Toast.LENGTH_LONG).show()
+            }
+            renderFont()
         }
     }
 

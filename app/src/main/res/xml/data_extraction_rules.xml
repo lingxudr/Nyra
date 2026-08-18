@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: aturan setara untuk cadangan awan dan transfer perangkat. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="nyra_settings.xml" />
+        <exclude domain="file" path="translation_cache.json" />
+        <exclude domain="file" path="lama.onnx" />
+        <exclude domain="file" path="fonts/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="nyra_settings.xml" />
+        <exclude domain="file" path="lama.onnx" />
+    </device-transfer>
+</data-extraction-rules>

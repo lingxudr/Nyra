@@ -57,6 +57,60 @@
         android:layout_marginEnd="12dp"
         android:background="@color/widget" />
 
+    <!-- Alat sunting kotak: aktif hanya saat mode sunting dinyalakan. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp">
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/swEditKotak"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="@string/editor_box_mode"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddBox"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:enabled="false"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/editor_box_add"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            app:backgroundTint="@color/dark_btn"
+            app:cornerRadius="10dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDelBox"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:enabled="false"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/editor_box_del"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            app:backgroundTint="@color/dark_btn"
+            app:cornerRadius="10dp" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/tvHint"
         android:layout_width="match_parent"

@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,33 +22,65 @@ android {
             }
         }
     }
-    namespace = "com.cypy.manga"
+    namespace = "com.nyra.comic"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.cypy.manga"
+        applicationId = "com.nyra.comic"
         minSdk = 24
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.25.1.24"
+        versionCode = 13
+        versionName = "2.0.0"
     }
 
+    // Kredensial penandatanganan TIDAK ditulis di sini.
+    //
+    // Sebelumnya kata sandi keystore ada sebagai literal di berkas ini, dan
+    // berkas ini masuk git - siapa pun yang mengkloning repo bisa menerbitkan
+    // APK yang terlihat sah sebagai NYRA. Sekarang nilainya dibaca dari
+    // keystore.properties (di-gitignore) atau variabel lingkungan, dan bila
+    // keduanya tidak ada build release memakai kunci debug bawaan Android
+    // supaya kontributor tetap bisa membangun tanpa memegang kunci rilis.
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) FileInputStream(f).use { load(it) }
+    }
+    fun rahasia(kunci: String, env: String): String? =
+        (keystoreProps.getProperty(kunci) ?: System.getenv(env))?.takeIf { it.isNotBlank() }
+
+    val storePath = rahasia("storeFile", "NYRA_KEYSTORE") ?: "../nyra-release.jks"
+    val storePass = rahasia("storePassword", "NYRA_STORE_PASSWORD")
+    val aliasName = rahasia("keyAlias", "NYRA_KEY_ALIAS")
+    val keyPass = rahasia("keyPassword", "NYRA_KEY_PASSWORD")
+    val bisaTandaTangan = storePass != null && aliasName != null && keyPass != null &&
+        file(storePath).exists()
+
     signingConfigs {
-        create("release") {
-            storeFile = file("../cypy-release.jks")
-            storePassword = "cypyandroid"
-            keyAlias = "cypy"
-            keyPassword = "cypyandroid"
+        if (bisaTandaTangan) {
+            create("release") {
+                storeFile = file(storePath)
+                storePassword = storePass
+                keyAlias = aliasName
+                keyPassword = keyPass
+            }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // R8 menyala: memangkas kelas mati dari okhttp/onnxruntime/material
+            // dan mengaburkan nama, sehingga APK lebih kecil dan pipeline tidak
+            // lagi terbaca sebagai peta jalan di dekompiler.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            if (bisaTandaTangan) signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
         }
     }
 

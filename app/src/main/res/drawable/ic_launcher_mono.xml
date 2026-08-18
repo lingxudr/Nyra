@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ikon monokrom (Android 13+ "themed icons").
+  Sistem mewarnai sendiri, jadi bentuknya harus terbaca sebagai siluet tunggal:
+  balon ucapan dengan huruf N di dalamnya. Foto maskot tidak bisa dipakai di
+  sini karena akan menjadi gumpalan hitam saat diberi satu warna.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="0" android:translateY="0">
+        <!-- Balon ucapan -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,24 C36.3,24 22,35.9 22,50.5 C22,58.7 26.5,66 33.6,70.9 L31.4,84 L45,76.2 C47.9,76.7 50.9,77 54,77 C71.7,77 86,65.1 86,50.5 C86,35.9 71.7,24 54,24 Z M54,30 C68.4,30 80,39.2 80,50.5 C80,61.8 68.4,71 54,71 C50.9,71 47.9,70.6 45.2,69.9 L43.6,69.5 L39.6,71.8 L40.3,67.6 L37.8,66 C32.5,62.5 28,57 28,50.5 C28,39.2 39.6,30 54,30 Z" />
+        <!-- Huruf N -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M43,39 L43,62 L48.5,62 L48.5,49.5 L60,62 L65,62 L65,39 L59.5,39 L59.5,51.5 L48,39 Z" />
+    </group>
+</vector>

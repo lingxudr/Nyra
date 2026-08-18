@@ -1,9 +1,17 @@
-# cypy for Android
+# NYRA — AI Comic Translation
 
-Port asli-native dari [cypy](https://github.com/indravoyager/cypy) (v1.25.1.13, APK v1.25.1.24) —
-penerjemah manga otomatis: deteksi balon bicara dengan YOLOv8 → terjemah lewat
-LLM vision API → bersihkan latar → tulis ulang teks yang sudah diterjemahkan ke
-dalam balon.
+<img src="app/src/main/res/drawable-nodpi/logo_nyra.png" width="120" alt="NYRA">
+
+**Translate. Restore. Read.** — マンガを、すべての言語へ。
+
+Penerjemah komik otomatis untuk Android. Deteksi balon bicara → terjemah lewat
+LLM vision API → bersihkan latar → tulis ulang teks ke dalam balon, dengan font
+dan warna yang mengikuti aslinya.
+
+Berbasis port asli-native dari [cypy](https://github.com/indravoyager/cypy)
+(MIT), kini jauh melampauinya: detektor tiga-kelas RT-DETR-v2, inpainting LaMa,
+pengukuran warna balon, editor kotak, ekspor CBZ, resume, glosarium, dan sejak
+v2.0 deteksi arah baca otomatis, cache terjemahan, serta penghitungan biaya.
 
 Ini bukan wrapper WebView dan bukan mockup. Seluruh pipeline berjalan on-device
 dengan Kotlin + ONNX Runtime; hanya panggilan terjemahan yang lewat jaringan.
@@ -12,18 +20,81 @@ dengan Kotlin + ONNX Runtime; hanya panggilan terjemahan yang lewat jaringan.
 
 | Berkas | ABI | Ukuran | SHA-256 |
 |---|---|---|---|
-| `cypy-1.25.1.24-arm64-v8a.apk` | arm64-v8a | 56,933,212 B | `24bf50cf8b85f74b92ca8c79e21089d282bc0c2e9412c67c2e85744ce1e74811` |
+| `nyra-2.0.0-arm64-v8a.apk` | arm64-v8a | 53,447,280 B | `4244311bdfdb514e4294e4135ca08d70ac4f1dcf075b5fdce640940ddd37019d` |
 
 Hanya varian arm64-v8a yang disertakan (ABI hampir semua telepon Android saat
-ini). Varian armeabi-v7a, x86_64, dan universal tetap bisa dibuat sendiri lewat
-`gradle assembleRelease`; semuanya tidak ikut disimpan karena ukurannya. GitHub tidak bisa dipakai untuk mengunduh dari
-tabel ini karena tabel Markdown hanya teks — ambil berkasnya lewat panel berkas
-di sebelah, atau lewat `apk/` di repo.
+ini). Varian armeabi-v7a dan x86_64 tetap bisa dibuat sendiri lewat
+`gradle assembleRelease`; keduanya tidak ikut disimpan karena ukurannya. Tabel
+Markdown hanya teks — ambil berkasnya lewat panel berkas di sebelah, atau lewat
+`apk/` di repo.
 
-Semua APK ditandatangani (APK Signature Scheme v2), `minSdk 24` (Android 7.0),
-`targetSdk 34`.
+APK ditandatangani (APK Signature Scheme v2, RSA-4096, `CN=NYRA`), `minSdk 24`
+(Android 7.0), `targetSdk 34`, versionCode 13. Sejak v2.0 kode diperkecil dan
+diaburkan dengan R8 (`isMinifyEnabled = true`), yang memangkas ~3,5 MB.
+
+## Baru di v2.0
+
+| Fitur | Ringkas |
+|---|---|
+| **Arah baca otomatis** | Manga (kanan-ke-kiri) vs manhwa/manhua/komik Barat (kiri-ke-kanan) ditebak per halaman dari bentuk blok teks dan rasio halaman, bukan dari satu sakelar manual yang bawaannya salah untuk manhwa. |
+| **Cache terjemahan** | Balon yang sama persis tidak dibayar dua kali. Kunci = sidik piksel + bahasa + model. |
+| **Token & biaya** | Token dibaca dari respons provider (bukan taksiran), biaya dihitung dari tabel tarif Agustus 2026, ditampilkan per request dan sebagai total kumulatif. |
+| **Pengerasan rilis** | R8 menyala, kunci penandatanganan keluar dari git, kunci API dienkripsi AES-256-GCM lewat Android Keystore, `allowBackup=false`, cleartext HTTP diblokir. |
+
+## Keamanan
+
+- **Kunci API terenkripsi.** Sebelumnya kunci disimpan apa adanya di
+  SharedPreferences — ikut tercadangkan, terbaca lewat `adb backup`, dan
+  gamblang di perangkat ter-root. Sekarang dienkripsi AES-256-GCM dengan kunci
+  yang hidup di dalam Android Keystore dan tidak pernah keluar dari sana
+  (`SecretStore.kt`). Nilai lama bermigrasi otomatis saat pertama dibaca.
+- **Kunci penandatanganan tidak ada di repo.** `keystore.properties` dan `*.jks`
+  masuk `.gitignore`; build membacanya dari berkas itu atau dari variabel
+  lingkungan `NYRA_KEYSTORE` / `NYRA_STORE_PASSWORD` / `NYRA_KEY_ALIAS` /
+  `NYRA_KEY_PASSWORD`. Tanpa keduanya, build release tetap jalan memakai kunci
+  debug sehingga kontributor tidak terhalang.
+- **`allowBackup="false"`.** Kunci Keystore tidak ikut tercadangkan, jadi
+  cadangan hanya akan memulihkan ciphertext yang mustahil dibuka.
+- **Cleartext HTTP diblokir** lewat `network_security_config.xml`, kecuali
+  loopback (server LLM lokal dan unit test).
+
+### Membangun dengan kunci rilis sendiri
+
+```bash
+keytool -genkeypair -v -keystore nyra-release.jks -alias nyra \
+  -keyalg RSA -keysize 4096 -validity 10950
+
+cat > keystore.properties <<EOF
+storeFile=../nyra-release.jks
+storePassword=<sandi>
+keyAlias=nyra
+keyPassword=<sandi>
+EOF
+
+gradle assembleRelease
+```
 
 ## Fitur (paritas dengan versi desktop)
+
+- **Arah baca otomatis**: urutan baca menentukan penomoran ID pada mosaik, jadi
+  ia menentukan urutan percakapan yang dibaca model — bukan sekadar kosmetik.
+  `ReadingDirection.kt` menilai tiga isyarat: strip webtoon (tinggi ≥ 2,5×
+  lebar → kiri-ke-kanan), tulisan tegak/tategaki (blok teks lebih tinggi
+  daripada lebar → kanan-ke-kiri, isyarat terkuat karena mengukur sistem
+  tulisannya), dan dominasi teks mendatar. Bila bukti tipis, keputusan halaman
+  sebelumnya dipakai; bila belum ada, barulah sakelar manual. Sakelar manual
+  otomatis diredupkan saat mode ini menyala.
+- **Cache terjemahan**: `TranslationCache.kt`. Sidik SHA-256 atas potongan balon
+  yang dinormalkan ke 32×32 abu-abu 16-aras, digabung bahasa dan nama model.
+  Penyaringan terjadi **sebelum** pembagian chunk, sehingga balon yang kena
+  cache benar-benar hilang dari request — bukan sekadar disaring belakangan.
+  Sidiknya sengaja eksak, bukan perseptual: cache yang meleset hanya memakan
+  satu request, cache yang salah menyisipkan terjemahan balon lain tanpa jejak.
+- **Token & biaya**: `Usage.kt`. Angka diambil dari `usageMetadata` (Gemini)
+  atau `usage` (OpenAI-kompatibel) pada respons — tidak ada taksiran dari
+  panjang prompt. Token *thinking* dijumlahkan ke keluaran karena memang
+  ditagih begitu. Model yang tarifnya tidak dikenal melaporkan token tanpa
+  biaya, alih-alih meminjam tarif model lain.
 
 - **Input**: PNG/JPG/WEBP, PDF, ZIP/CBZ, RAR/CBR — dibuka via Storage Access Framework.
 - **Deteksi**: dua detektor dibundel di assets. Bawaannya `rtdetr.onnx`

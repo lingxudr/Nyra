@@ -127,6 +127,11 @@ class Project(
             j.put("fg", c.foreground)
             j.put("diukur", c.diukur)
             if (c.warnaBaris.isNotEmpty()) j.put("baris", JSONArray(c.warnaBaris))
+            // Ronde 22: warna garis luar sempat hilang di sini. Akibatnya
+            // halaman yang digambar ulang dari proyek kehilangan warna outline
+            // yang sudah diukur mahal-mahal saat deteksi, dan hasil editor
+            // berbeda dari hasil jalur utama untuk halaman yang sama.
+            c.garisLuar?.let { j.put("garisLuar", it) }
             return j
         }
 
@@ -135,7 +140,8 @@ class Project(
             val list = if (baris == null) emptyList()
             else (0 until baris.length()).map { baris.getInt(it) }
             return Palette.Colors(
-                j.getInt("bg"), j.getInt("fg"), j.optBoolean("diukur", true), list
+                j.getInt("bg"), j.getInt("fg"), j.optBoolean("diukur", true), list,
+                if (j.has("garisLuar")) j.getInt("garisLuar") else null
             )
         }
 

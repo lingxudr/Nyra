@@ -31,15 +31,12 @@
                 android:gravity="center_vertical"
                 android:layout_marginBottom="20dp">
 
-                <TextView
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
-                    android:background="@drawable/logo_badge"
-                    android:gravity="center"
-                    android:text="cy"
-                    android:textColor="@color/white"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
+                <ImageView
+                    android:layout_width="46dp"
+                    android:layout_height="46dp"
+                    android:src="@drawable/logo_nyra"
+                    android:contentDescription="@string/app_name"
+                    android:scaleType="fitCenter" />
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -74,7 +71,7 @@
                     android:paddingEnd="10dp"
                     android:paddingTop="5dp"
                     android:paddingBottom="5dp"
-                    android:text="v1.25.1.13"
+                    android:text="v2.0.0"
                     android:textColor="@color/accent"
                     android:textSize="11sp"
                     android:textStyle="bold" />
@@ -467,37 +464,37 @@
                         <TextView android:id="@+id/lblBubbles" style="@style/FieldLabel"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
-                        <SeekBar android:id="@+id/sbBubbles" style="@style/CypySeekBar"
+                        <SeekBar android:id="@+id/sbBubbles" style="@style/NyraSeekBar"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
                         <TextView android:id="@+id/lblDelay" style="@style/FieldLabel"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
-                        <SeekBar android:id="@+id/sbDelay" style="@style/CypySeekBar"
+                        <SeekBar android:id="@+id/sbDelay" style="@style/NyraSeekBar"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
                         <TextView android:id="@+id/lblPadX" style="@style/FieldLabel"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
-                        <SeekBar android:id="@+id/sbPadX" style="@style/CypySeekBar"
+                        <SeekBar android:id="@+id/sbPadX" style="@style/NyraSeekBar"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
                         <TextView android:id="@+id/lblPadY" style="@style/FieldLabel"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
-                        <SeekBar android:id="@+id/sbPadY" style="@style/CypySeekBar"
+                        <SeekBar android:id="@+id/sbPadY" style="@style/NyraSeekBar"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
                         <TextView android:id="@+id/lblMask" style="@style/FieldLabel"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
-                        <SeekBar android:id="@+id/sbMask" style="@style/CypySeekBar"
+                        <SeekBar android:id="@+id/sbMask" style="@style/NyraSeekBar"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
                         <TextView android:id="@+id/lblMaxSide" style="@style/FieldLabel"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
-                        <SeekBar android:id="@+id/sbMaxSide" style="@style/CypySeekBar"
+                        <SeekBar android:id="@+id/sbMaxSide" style="@style/NyraSeekBar"
                             android:layout_width="match_parent" android:layout_height="wrap_content" />
 
                         <TextView style="@style/FieldLabel"
@@ -570,6 +567,23 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:text="@string/hint_warna"
+                            android:textColor="@color/text_muted"
+                            android:textSize="11sp" />
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/swArahOtomatis"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="@string/opt_auto_direction"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/opt_auto_direction_desc"
                             android:textColor="@color/text_muted"
                             android:textSize="11sp" />
 
@@ -657,6 +671,76 @@
                             android:text="@string/hint_proyek"
                             android:textColor="@color/text_muted"
                             android:textSize="11sp" />
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/swCache"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="@string/opt_cache"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/opt_cache_desc"
+                            android:textColor="@color/text_muted"
+                            android:textSize="11sp" />
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/swBiaya"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="@string/opt_cost"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/opt_cost_desc"
+                            android:textColor="@color/text_muted"
+                            android:textSize="11sp" />
+
+                        <!-- Ringkasan pemakaian kumulatif + tombol reset. -->
+                        <TextView
+                            android:id="@+id/tvPemakaian"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:background="@drawable/chip_bg"
+                            android:padding="10dp"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:text="" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="8dp">
+
+                            <Button
+                                android:id="@+id/btnResetBiaya"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:text="@string/btn_reset_cost"
+                                android:textSize="12sp" />
+
+                            <Button
+                                android:id="@+id/btnBersihkanCache"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="8dp"
+                                android:text="@string/btn_clear_cache"
+                                android:textSize="12sp" />
+                        </LinearLayout>
 
                         <com.google.android.material.materialswitch.MaterialSwitch
                             android:id="@+id/swInpaint"

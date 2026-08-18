@@ -40,6 +40,51 @@ class PageView @JvmOverloads constructor(
     /** Dipanggil dengan nomor kotak berbasis 1 saat sebuah balon diketuk. */
     var onBoxTap: ((Int) -> Unit)? = null
 
+    /**
+     * Mode sunting kotak.
+     *
+     * Saat aktif, seretan TIDAK lagi menggeser halaman melainkan memindahkan
+     * atau mengubah ukuran kotak — pemisahan yang perlu tegas, sebab satu
+     * gerakan jari tidak boleh berarti dua hal sekaligus.
+     */
+    var modeEdit = false
+        set(v) {
+            field = v
+            tarik = BoxEdit.Gagang.TIDAK_ADA
+            kotakBaruAktif = null
+            invalidate()
+        }
+
+    /** Dipanggil setelah kotak [nomor] selesai digeser/diubah ukurannya. */
+    var onBoxChanged: ((Int, IntArray) -> Unit)? = null
+
+    /** Dipanggil saat pengguna menyelesaikan seretan kotak baru. */
+    var onBoxCreated: ((IntArray) -> Unit)? = null
+
+    /** Mode gambar kotak baru: seretan berikutnya membuat kotak, bukan menggeser. */
+    var modeTambah = false
+        set(v) {
+            field = v
+            kotakBaruAktif = null
+            invalidate()
+        }
+
+    private var tarik = BoxEdit.Gagang.TIDAK_ADA
+    private var tarikIdx = -1
+    private var kotakBaruAktif: IntArray? = null
+    private var mulaiBx = 0f
+    private var mulaiBy = 0f
+
+    private val catGagang = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#FFEC4899")
+    }
+    private val catBaru = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = Color.parseColor("#FF22C55E")
+    }
+
     private val m = Matrix()
     private val nilai = FloatArray(9)
     private var skalaDasar = 1f
@@ -157,6 +202,26 @@ class PageView @JvmOverloads constructor(
             )
             if (r.bottom < 0 || r.top > height) continue
             canvas.drawRect(r, if (i + 1 == sorot) catSorot else catKotak)
+
+            // Gagang hanya digambar untuk kotak terpilih di mode sunting:
+            // menampilkannya di semua kotak membuat halaman padat balon
+            // berubah jadi kabut titik merah muda.
+            if (modeEdit && i + 1 == sorot) {
+                val j = 9f
+                canvas.drawCircle(r.left, r.top, j, catGagang)
+                canvas.drawCircle(r.right, r.top, j, catGagang)
+                canvas.drawCircle(r.left, r.bottom, j, catGagang)
+                canvas.drawCircle(r.right, r.bottom, j, catGagang)
+            }
+        }
+
+        kotakBaruAktif?.let { kb ->
+            canvas.drawRect(
+                RectF(
+                    kb[0] * s + tx, kb[1] * s + ty,
+                    kb[2] * s + tx, kb[3] * s + ty
+                ), catBaru
+            )
         }
     }
 
@@ -168,27 +233,114 @@ class PageView @JvmOverloads constructor(
                 lastX = event.x; lastY = event.y
                 turunX = event.x; turunY = event.y
                 geser = true; bergerak = false
+                tarik = BoxEdit.Gagang.TIDAK_ADA
+                tarikIdx = -1
+
+                val (bx, by) = keBitmap(event.x, event.y)
+                mulaiBx = bx; mulaiBy = by
+
+                if (modeTambah) {
+                    kotakBaruAktif = intArrayOf(bx.toInt(), by.toInt(), bx.toInt(), by.toInt())
+                } else if (modeEdit && sorot > 0) {
+                    // Hanya kotak TERPILIH yang bisa ditarik. Membiarkan semua
+                    // kotak menangkap seretan membuat halaman padat balon
+                    // mustahil digeser: jari selalu mendarat di atas sesuatu.
+                    val b = boxes.getOrNull(sorot - 1)
+                    if (b != null) {
+                        // Toleransi gagang dibagi skala supaya ukurannya tetap
+                        // konstan di LAYAR, bukan di bitmap.
+                        val s = skalaSaatIni().coerceAtLeast(0.0001f)
+                        val tol = (BoxEdit.GAGANG / s).toInt().coerceAtLeast(4)
+                        tarik = BoxEdit.gagangDi(b, bx, by, tol)
+                        if (tarik != BoxEdit.Gagang.TIDAK_ADA) tarikIdx = sorot
+                    }
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 if (geser && !zoomDetector.isInProgress) {
-                    val dx = event.x - lastX
-                    val dy = event.y - lastY
                     if (kotlin.math.abs(event.x - turunX) > 12 ||
                         kotlin.math.abs(event.y - turunY) > 12) bergerak = true
-                    m.postTranslate(dx, dy)
-                    batasi()
-                    invalidate()
+
+                    val (bx, by) = keBitmap(event.x, event.y)
+                    val kb = kotakBaruAktif
+                    when {
+                        kb != null -> {
+                            kb[2] = bx.toInt(); kb[3] = by.toInt()
+                            invalidate()
+                        }
+                        tarik != BoxEdit.Gagang.TIDAK_ADA && tarikIdx > 0 -> {
+                            seretKotak(bx, by)
+                            mulaiBx = bx; mulaiBy = by
+                        }
+                        else -> {
+                            m.postTranslate(event.x - lastX, event.y - lastY)
+                            batasi()
+                            invalidate()
+                        }
+                    }
                 }
                 lastX = event.x; lastY = event.y
             }
             MotionEvent.ACTION_UP -> {
-                // Ketukan, bukan geseran: cari balon di bawah jari.
-                if (geser && !bergerak) ketuk(event.x, event.y)
+                val kb = kotakBaruAktif
+                when {
+                    kb != null -> {
+                        kotakBaruAktif = null
+                        val b = bmp
+                        val jadi = if (b == null) null
+                        else BoxEdit.kotakBaru(kb[0], kb[1], kb[2], kb[3], b.width, b.height)
+                        if (jadi != null) onBoxCreated?.invoke(jadi)
+                        invalidate()
+                    }
+                    tarik != BoxEdit.Gagang.TIDAK_ADA && tarikIdx > 0 -> {
+                        boxes.getOrNull(tarikIdx - 1)?.let { onBoxChanged?.invoke(tarikIdx, it) }
+                    }
+                    // Ketukan, bukan geseran: cari balon di bawah jari.
+                    geser && !bergerak -> ketuk(event.x, event.y)
+                }
+                tarik = BoxEdit.Gagang.TIDAK_ADA
+                tarikIdx = -1
                 geser = false
             }
-            MotionEvent.ACTION_CANCEL -> geser = false
+            MotionEvent.ACTION_CANCEL -> {
+                geser = false
+                tarik = BoxEdit.Gagang.TIDAK_ADA
+                tarikIdx = -1
+                kotakBaruAktif = null
+                invalidate()
+            }
         }
         return true
+    }
+
+    /** Ubah koordinat layar jadi koordinat bitmap. */
+    private fun keBitmap(x: Float, y: Float): Pair<Float, Float> {
+        m.getValues(nilai)
+        val s = nilai[Matrix.MSCALE_X]
+        if (s <= 0f) return 0f to 0f
+        return (x - nilai[Matrix.MTRANS_X]) / s to (y - nilai[Matrix.MTRANS_Y]) / s
+    }
+
+    /**
+     * Terapkan satu langkah seretan ke kotak terpilih.
+     *
+     * Kotak diubah di tempat (elemen list yang sama) supaya onDraw langsung
+     * menampilkannya tanpa perlu menggambar ulang halaman — menggambar ulang
+     * strip webtoon per gerakan jari akan membuat seretan tersendat parah.
+     */
+    private fun seretKotak(bx: Float, by: Float) {
+        val b = bmp ?: return
+        val idx = tarikIdx - 1
+        val kotak = boxes.getOrNull(idx) ?: return
+        val hasil = if (tarik == BoxEdit.Gagang.ISI) {
+            BoxEdit.geser(kotak, (bx - mulaiBx).toInt(), (by - mulaiBy).toInt(), b.width, b.height)
+        } else {
+            BoxEdit.ubahUkuran(kotak, tarik, bx.toInt(), by.toInt(), b.width, b.height)
+        }
+        // boxes adalah List<IntArray>; isi arraynya yang disalin, bukan
+        // elemennya yang diganti, supaya referensi milik Project ikut berubah.
+        hasil.copyInto(kotak)
+        invalidate()
     }
 
     private fun ketuk(x: Float, y: Float) {

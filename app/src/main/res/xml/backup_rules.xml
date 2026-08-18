@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Berlaku bila allowBackup dinyalakan kembali (Android 11 ke bawah).
+  Setelan dikecualikan karena memuat kunci API terenkripsi yang tidak bisa
+  dibuka di perangkat lain; cache terjemahan dikecualikan karena bisa dibangun
+  ulang dan hanya membengkakkan cadangan.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="nyra_settings.xml" />
+    <exclude domain="file" path="translation_cache.json" />
+    <exclude domain="file" path="lama.onnx" />
+    <exclude domain="file" path="fonts/" />
+</full-backup-content>

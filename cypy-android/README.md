@@ -1,6 +1,6 @@
 # cypy for Android
 
-Port asli-native dari [cypy](https://github.com/indravoyager/cypy) (v1.25.1.13, APK v1.25.1.23) —
+Port asli-native dari [cypy](https://github.com/indravoyager/cypy) (v1.25.1.13, APK v1.25.1.24) —
 penerjemah manga otomatis: deteksi balon bicara dengan YOLOv8 → terjemah lewat
 LLM vision API → bersihkan latar → tulis ulang teks yang sudah diterjemahkan ke
 dalam balon.
@@ -12,7 +12,7 @@ dengan Kotlin + ONNX Runtime; hanya panggilan terjemahan yang lewat jaringan.
 
 | Berkas | ABI | Ukuran | SHA-256 |
 |---|---|---|---|
-| `cypy-1.25.1.23-arm64-v8a.apk` | arm64-v8a | 56,906,100 B | `5b649e3d79e5796e207629303442f05152fd0a0f4821fc3df2be455dcf06e181` |
+| `cypy-1.25.1.24-arm64-v8a.apk` | arm64-v8a | 56,933,212 B | `24bf50cf8b85f74b92ca8c79e21089d282bc0c2e9412c67c2e85744ce1e74811` |
 
 Hanya varian arm64-v8a yang disertakan (ABI hampir semua telepon Android saat
 ini). Varian armeabi-v7a, x86_64, dan universal tetap bisa dibuat sendiri lewat
@@ -873,3 +873,44 @@ benar sambil menghabiskan seluruh kuota.
 | `EpubOrderTest` (12) | spine menang atas nama berkas; resolusi jalur relatif |
 | `ResumeTest` (11) | kunci titik simpan; bertahan setelah folder kerja dihapus |
 | `ResumePipelineTest` (5) | jalan kedua tidak mengulang permintaan berbayar |
+
+## Ronde 22 — editor kotak, ekspor CBZ, paket font
+
+**Editor kotak.** Kotak balon bisa digeser, diubah ukurannya lewat empat gagang
+sudut, ditambah, dan dihapus. Penyisipan mengurutkan ulang nomor baca lewat
+`BoxUtils.urutBaca`, dan terjemahan serta teks sumber ikut bergeser mengikuti
+penomoran baru.
+
+**Ekspor CBZ.** Satu proyek diekspor jadi arsip `<judul>_<LANG>.cbz` (ZIP
+STORED, nama entri berpadding nol) yang langsung terbaca pembaca komik.
+
+**Paket font — dan koreksi atas asumsinya.**
+
+Fitur ini semula dibangun di atas kesimpulan yang keliru. Cakupan cmap font
+bawaan memang tipis (`kosugi.ttf`: 0 glif Hangul, 0 Thai, 31,8% Han), dan dari
+angka itu disimpulkan bahwa menerjemahkan ke Korea/Thai menghasilkan kotak
+kosong. Render sungguhan membantahnya: kalimat Thai dan Korea tergambar bersih
+tanpa satu pun tofu meski paket tidak terpasang.
+
+Sebabnya, `Typeface.createFromAsset` membangun typeface lewat `Typeface.Builder`
+yang menyetel fallback ke `DEFAULT_FAMILY`, sehingga glif yang absen ditambal
+dari rantai font sistem — dan rantai AOSP memuat `NotoSansThai-Regular.ttf`
+serta `NotoSansCJK-Regular.ttc`. **Cakupan cmap font aplikasi bukan penentu
+munculnya tofu.**
+
+Karena itu paket font kini berperan sebagai jaring pengaman, bukan kebutuhan
+umum. `FontPack.perluUntukBahasa()` bertanya ke perangkat lewat
+`Paint.hasGlyph`, jadi tawaran unduhan hanya muncul di ROM yang benar-benar
+membuang font aksara tersebut (Go edition, ROM pangkasan per-region). Di ponsel
+biasa dialog itu tidak muncul sama sekali.
+
+> **Catatan bagi yang akan menambah tes:** bukti tofu tidak bisa dibuat di
+> Robolectric. Set fontnya jauh lebih luas daripada ponsel mana pun —
+> `hasGlyph` mengembalikan `true` bahkan untuk Cuneiform dan Linear-B — jadi
+> tes piksel apa pun di sana menyesatkan. `FontPackRenderTest` sempat ditulis
+> lalu dihapus karena alasan ini. Verifikasi tofu hanya sah di perangkat nyata.
+
+Isi paket bila diunduh: NotoSansKR 4,6 MB + NotoSansSC 8,3 MB + NotoSansThai
+72 KB (SIL OFL 1.1). Keduanya diperlukan karena tidak ada satu font yang
+menutup semuanya: KR menutup Hangul 100% tapi Han hanya 38,8%; SC menutup Han
+99,9% tapi Hangul 0%.

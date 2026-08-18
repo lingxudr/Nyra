@@ -14,14 +14,30 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!--
+      allowBackup dimatikan dengan sengaja.
+
+      SharedPreferences aplikasi ini memuat kunci API (kini terenkripsi lewat
+      Android Keystore). Kunci Keystore tidak ikut tercadangkan dan tidak bisa
+      dipulihkan ke perangkat lain, jadi cadangan otomatis hanya akan memulihkan
+      ciphertext yang mustahil dibuka - pengguna melihat kunci "ada" tapi setiap
+      permintaan gagal. Lebih jujur meminta kunci diketik ulang di perangkat
+      baru. Ini sekaligus menutup jalur `adb backup` untuk membaca setelan.
+
+      fullBackupContent/dataExtractionRules tetap ditulis supaya niatnya
+      terbaca jelas bila suatu saat cadangan dinyalakan lagi.
+    -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:largeHeap="true"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.Cypy">
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.Nyra">
 
         <activity
             android:name=".MainActivity"

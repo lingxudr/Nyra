@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  usesCleartextTraffic="true" dihapus dari manifest dan diganti kebijakan ini.
+
+  Semua provider yang didukung (Gemini, OpenAI, OpenRouter, Zen) dan semua
+  unduhan model (HuggingFace, GitHub) memakai HTTPS. Mengizinkan HTTP polos
+  secara global berarti kunci API bisa dikirim tanpa enkripsi bila pengguna
+  salah mengetik base URL provider kustom, atau bila DNS-nya dibajak.
+
+  Cleartext tetap diizinkan untuk alamat loopback saja: unit test menjalankan
+  server HTTP kecil di 127.0.0.1, dan pengguna tingkat lanjut kadang menaruh
+  server LLM lokal (llama.cpp, LM Studio) di perangkat yang sama.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

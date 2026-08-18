@@ -1,9 +1,9 @@
 <resources>
-    <string name="app_name">cypy</string>
+    <string name="app_name">NYRA</string>
     <string name="results">Hasil</string>
 
     <!-- Header -->
-    <string name="tagline">Penerjemah manga otomatis</string>
+    <string name="tagline">AI Comic Translation</string>
 
     <!-- Input -->
     <string name="sec_input">Berkas masukan</string>
@@ -66,7 +66,7 @@
     <!-- Console -->
     <string name="sec_console">Konsol</string>
     <string name="btn_clear_log">Bersihkan</string>
-    <string name="log_ready">cypy siap.\n</string>
+    <string name="log_ready">NYRA siap. Translate. Restore. Read.\n</string>
 
     <!-- Actions -->
     <string name="btn_translate">Terjemahkan</string>
@@ -125,4 +125,21 @@
     <string name="projects_title">Proyek tersimpan</string>
     <string name="opt_simpan_proyek">Simpan proyek untuk disunting ulang</string>
     <string name="hint_proyek">Menyimpan kotak, teks, dan warna tiap halaman supaya salah terjemah bisa diperbaiki tanpa mendeteksi dan menerjemahkan ulang.</string>
+
+    <!-- Arah baca otomatis -->
+    <string name="opt_auto_direction">Deteksi arah baca otomatis</string>
+    <string name="opt_auto_direction_desc">Tebak kanan-ke-kiri (manga) atau kiri-ke-kanan (manhwa, manhua, komik Barat) dari tata letak tiap halaman. Matikan untuk memaksa satu arah lewat sakelar di bawah.</string>
+
+    <!-- Cache -->
+    <string name="opt_cache">Cache terjemahan</string>
+    <string name="opt_cache_desc">Pakai ulang terjemahan balon yang sama persis, sehingga proses ulang tidak dibayar dua kali.</string>
+    <string name="btn_clear_cache">Kosongkan cache</string>
+    <string name="cache_cleared">Cache terjemahan dikosongkan.</string>
+
+    <!-- Biaya -->
+    <string name="opt_cost">Hitung token dan biaya</string>
+    <string name="opt_cost_desc">Tampilkan token terpakai dan perkiraan biaya tiap permintaan di konsol. Tarif per Agustus 2026 dan hanya perkiraan.</string>
+    <string name="btn_reset_cost">Reset penghitung biaya</string>
+    <string name="cost_reset">Penghitung biaya direset.</string>
+    <string name="sec_usage">Pemakaian</string>
 </resources>
