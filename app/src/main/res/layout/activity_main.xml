@@ -968,6 +968,18 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnLibrary"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginBottom="8dp"
+                android:text="@string/lib_open"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"
+                app:strokeColor="@color/border"
+                app:cornerRadius="12dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnResults"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="match_parent"

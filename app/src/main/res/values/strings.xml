@@ -144,4 +144,34 @@
     <string name="btn_reset_cost">Reset penghitung biaya</string>
     <string name="cost_reset">Penghitung biaya direset.</string>
     <string name="sec_usage">Pemakaian</string>
+
+    <!-- Perpustakaan proyek -->
+    <string name="editor_ok">Oke</string>
+    <string name="lib_title">Perpustakaan</string>
+    <string name="lib_open">Perpustakaan proyek</string>
+    <string name="lib_search">Cari judul atau bahasa…</string>
+    <string name="lib_empty">Belum ada proyek tersimpan.\n\nProyek dibuat otomatis setiap kali Anda menerjemahkan, selama sakelar \"Simpan proyek\" menyala. Di sini Anda bisa membacanya lagi atau memperbaiki terjemahannya tanpa memanggil API sekali pun.</string>
+    <string name="lib_no_match">Tidak ada proyek yang cocok dengan pencarian itu.</string>
+    <string name="lib_read">Baca</string>
+    <string name="lib_edit">Perbaiki terjemahan</string>
+    <string name="lib_rename">Ganti nama</string>
+    <string name="lib_delete">Hapus</string>
+    <string name="lib_delete_msg">Hapus \"%1$s\"? Hasil deteksi dan terjemahannya ikut hilang, dan menerjemahkan ulang berarti memanggil API lagi dari awal.</string>
+    <string name="lib_deleted">Proyek dihapus.</string>
+    <string name="lib_status_done">%1$d balon · %2$s</string>
+    <string name="lib_status_partial">%1$d dari %2$d balon (%3$d%%) · %4$s</string>
+    <plurals name="lib_pages">
+        <item quantity="other">%d halaman</item>
+    </plurals>
+
+    <!-- Pembaca non-destruktif -->
+    <string name="reader_translated">Terjemahan</string>
+    <string name="reader_original">Asli</string>
+    <string name="reader_page">Halaman %1$d / %2$d</string>
+    <string name="reader_loading">Memuat…</string>
+    <string name="reader_failed">Halaman tidak bisa dibaca.</string>
+    <string name="reader_hint">Ketuk balon untuk melihat teks aslinya</string>
+    <string name="reader_source">Teks asli</string>
+    <string name="reader_translation">Terjemahan</string>
+    <string name="reader_bubble">Balon %1$d</string>
 </resources>

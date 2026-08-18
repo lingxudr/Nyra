@@ -123,8 +123,24 @@ class PageView @JvmOverloads constructor(
     private var turunX = 0f
     private var turunY = 0f
 
+    /**
+     * Apakah view ini yang memiliki bitmapnya dan boleh mendaur ulangnya.
+     *
+     * Editor menampilkan satu bitmap sekali pakai, jadi mendaur ulang yang
+     * lama saat halaman berganti adalah perilaku yang benar dan hemat memori.
+     * Pembaca berbeda: ia menahan DUA bitmap — halaman asli dan halaman
+     * terjemahan — lalu bergantian menampilkannya. Kalau view ikut mendaur
+     * ulang, tekan sekali tombol lapisan akan membuang bitmap yang sebentar
+     * lagi dipakai lagi, dan tekan kedua kalinya menampilkan gambar kosong
+     * atau melempar "Canvas: trying to use a recycled bitmap". Pemilik yang
+     * menahan keduanya harus mematikan bendera ini.
+     */
+    var milikSendiri = true
+
     fun setPage(bitmap: Bitmap?, kotak: List<IntArray>) {
-        bmp?.let { if (it !== bitmap && !it.isRecycled) it.recycle() }
+        if (milikSendiri) {
+            bmp?.let { if (it !== bitmap && !it.isRecycled) it.recycle() }
+        }
         bmp = bitmap
         boxes = kotak
         sorot = 0

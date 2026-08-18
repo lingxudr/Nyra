@@ -48,7 +48,12 @@ class ResultActivity : AppCompatActivity() {
         b.btnBack.setOnClickListener { finish() }
 
         // Tombol perbaiki hanya muncul kalau memang ada proyek untuk disunting.
-        // Proyek terbaru dipakai: itulah hasil yang barusan dilihat pengguna.
+        //
+        // Proyek TERBARU dipakai karena itulah hasil yang barusan dilihat
+        // pengguna. Sebelum ronde 24 inilah satu-satunya jalan menuju editor,
+        // sehingga bab-bab lama tak pernah bisa dibuka lagi walau masih utuh
+        // di disk; sekarang jalan yang lengkap ada di LibraryActivity dan
+        // tombol ini tinggal jadi jalan pintas ke bab yang baru selesai.
         val prj = Project.list(this).firstOrNull()
         if (prj != null && prj.pages.isNotEmpty()) {
             b.btnEdit.visibility = View.VISIBLE

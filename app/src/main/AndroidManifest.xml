@@ -63,6 +63,19 @@
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".LibraryActivity"
+            android:exported="false"
+            android:label="@string/lib_title"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ReaderActivity"
+            android:exported="false"
+            android:label="@string/lib_title"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />
+
         <service
             android:name=".TranslationService"
             android:exported="false"
