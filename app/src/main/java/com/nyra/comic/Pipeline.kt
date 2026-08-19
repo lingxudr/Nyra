@@ -664,7 +664,7 @@ class Pipeline(
     )
 
     /** A bubble crop parked on disk until its mosaic request is built. */
-    private class PendingCrop(val file: File, val unitIdx: Int, val partIdx: Int, val boxIdx: Int)
+    internal class PendingCrop(val file: File, val unitIdx: Int, val partIdx: Int, val boxIdx: Int)
 
     /**
      * Halaman mana saja pada batch terakhir yang BENAR-BENAR selesai, yaitu
@@ -1019,6 +1019,58 @@ class Pipeline(
         rujukanKunci = null
     }
 
+    /**
+     * Satu potongan mosaik yang sudah jadi, beserta jumlah potongan yang
+     * benar-benar masuk ke dalamnya.
+     */
+    internal class Mosaik(val bitmap: Bitmap, val id: List<String>) {
+        val jumlah: Int get() = id.size
+    }
+
+    /**
+     * Decode potongan, susun jadi mosaik bernomor, lalu bebaskan SEMUA bitmap
+     * antara. Pemanggil cukup me-recycle [Mosaik.bitmap] saat selesai.
+     *
+     * Sebelumnya urutan decode -> shrinkIfTooTall -> build -> recycle ditulis
+     * dua kali di [kerjakanChunk]: sekali untuk mosaik utama, sekali lagi di
+     * jalur permintaan ulang. Duplikat itu bukan sekadar berulang - blok
+     * kedua harus menyalin persis logika pembebasan bitmapnya, dan bitmap
+     * mosaik berukuran belasan megabita, jadi satu baris yang lupa disalin
+     * langsung jadi kebocoran memori. Sekarang satu jalur untuk keduanya.
+     *
+     * Aman dipanggil dari beberapa thread: [numberPaint] milik pemanggil dan
+     * tidak ada state bersama yang disentuh.
+     *
+     * @return null bila tidak ada satu pun potongan yang berhasil didecode.
+     */
+    internal fun susunMosaik(
+        potongan: List<Pair<String, PendingCrop>>, numberPaint: Paint
+    ): Mosaik? {
+        // Potongan yang gagal didecode dijatuhkan di sini dan nomornya TIDAK
+        // ikut dikembalikan, supaya pemanggil tidak pernah menjanjikan nomor
+        // yang sebenarnya tidak ada di dalam gambar.
+        val crops = ArrayList<Mosaic.Crop>(potongan.size)
+        for ((id, pc) in potongan) {
+            val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
+            crops.add(Mosaic.Crop(id, bmp))
+        }
+        if (crops.isEmpty()) return null
+
+        val shrunk = Mosaic.shrinkIfTooTall(
+            crops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20
+        )
+        val mosaic = Mosaic.build(shrunk, cfg, numberPaint)
+
+        // shrinkIfTooTall mengembalikan crops ASLI kalau semuanya sudah muat,
+        // jadi bitmap yang sama bisa muncul di kedua daftar. Bandingkan dulu
+        // supaya tidak ada yang di-recycle dua kali.
+        val originals = crops.map { it.bitmap }
+        shrunk.forEach { if (it.bitmap !in originals) it.bitmap.recycle() }
+        originals.forEach { it.recycle() }
+
+        return Mosaik(mosaic, shrunk.map { it.id })
+    }
+
     /** Hasil satu request mosaik, belum diterapkan ke state bersama. */
     private class HasilChunk(
         val diterima: Map<String, String>,
@@ -1046,22 +1098,20 @@ class Pipeline(
         // nomor yang salah ukuran atau hilang secara acak.
         val numberPaint = renderer.mosaicNumberPaint()
 
+        val urut = ArrayList<Pair<String, PendingCrop>>(chunk.size)
+        for ((i, pc) in chunk.withIndex()) urut.add((i + 1).toString() to pc)
+
+        val susunan = susunMosaik(urut, numberPaint) ?: return null
+        val mosaic = susunan.bitmap
+        val jumlahPotongan = susunan.jumlah
+
+        // Hanya nomor yang benar-benar tergambar di mosaik yang boleh masuk
+        // idMapping. Kalau sebuah potongan gagal didecode, menaruhnya di sini
+        // akan membuat jalur "minta ulang" mengejar nomor yang tidak pernah
+        // dikirim ke model.
+        val tergambar = susunan.id.toHashSet()
         val idMapping = HashMap<String, PendingCrop>()
-        val crops = ArrayList<Mosaic.Crop>()
-        for ((i, pc) in chunk.withIndex()) {
-            val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
-            val localId = (i + 1).toString()
-            idMapping[localId] = pc
-            crops.add(Mosaic.Crop(localId, bmp))
-        }
-        if (crops.isEmpty()) return null
-
-        val shrunk = Mosaic.shrinkIfTooTall(crops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20)
-        val mosaic = Mosaic.build(shrunk, cfg, numberPaint)
-
-        val originals = crops.map { it.bitmap }
-        shrunk.forEach { if (it.bitmap !in originals) it.bitmap.recycle() }
-        originals.forEach { it.recycle() }
+        for ((id, pc) in urut) if (id in tergambar) idMapping[id] = pc
 
         if (cfg.konteksHalaman && pageContext.size > 0) {
             log("  [i] Konteks: ${pageContext.size} halaman sebelumnya disertakan.")
@@ -1098,7 +1148,7 @@ class Pipeline(
             return null
         }
 
-        log("  [Request ${cIdx + 1}/$totalChunk] Translating ${shrunk.size} bubbles with ${provider.providerName}...")
+        log("  [Request ${cIdx + 1}/$totalChunk] Translating $jumlahPotongan bubbles with ${provider.providerName}...")
         val translations = translateMosaic(mosaic, provider, lang, rujukan)
         mosaic.recycle()
 
@@ -1109,7 +1159,7 @@ class Pipeline(
                 log("  [!] Request ${cIdx + 1} stopped before it returned.")
             } else {
                 log("  [!] No translation returned for request ${cIdx + 1} " +
-                    "(${shrunk.size} bubble(s) left untranslated).")
+                    "($jumlahPotongan bubble(s) left untranslated).")
             }
             return null
         }
@@ -1122,20 +1172,12 @@ class Pipeline(
         val hilang = idMapping.keys.filter { it !in diterima }
         if (hilang.isNotEmpty() && !cancelled) {
             log("  [!] ${hilang.size} nomor tidak dijawab model, meminta ulang...")
-            val ulangCrops = ArrayList<Mosaic.Crop>()
-            for (id in hilang) {
-                val pc = idMapping[id] ?: continue
-                val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
-                ulangCrops.add(Mosaic.Crop(id, bmp))
+            val ulang = hilang.mapNotNull { id ->
+                idMapping[id]?.let { id to it }
             }
-            if (ulangCrops.isNotEmpty()) {
-                val ulangShrunk = Mosaic.shrinkIfTooTall(
-                    ulangCrops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20
-                )
-                val ulangMosaic = Mosaic.build(ulangShrunk, cfg, numberPaint)
-                val asli = ulangCrops.map { it.bitmap }
-                ulangShrunk.forEach { if (it.bitmap !in asli) it.bitmap.recycle() }
-                asli.forEach { it.recycle() }
+            val ulangSusunan = susunMosaik(ulang, numberPaint)
+            if (ulangSusunan != null) {
+                val ulangMosaic = ulangSusunan.bitmap
                 val tambahan = runCatching {
                     translateMosaic(ulangMosaic, provider, lang, rujukan)
                 }.getOrElse { emptyMap() }
