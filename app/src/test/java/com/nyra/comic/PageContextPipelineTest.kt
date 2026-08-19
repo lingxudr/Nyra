@@ -90,6 +90,17 @@ class PageContextPipelineTest {
         // tanpa permintaan dan tes ini kehilangan permintaan yang mau diperiksa.
         // Interaksi cache-dengan-konteks diuji terpisah di bawah.
         cfg.cacheTerjemahan = false
+        // Satu balon per permintaan, dan permintaan dikirim berurutan.
+        //
+        // Yang diuji di sini adalah aliran konteks ANTAR permintaan, jadi
+        // harus ada lebih dari satu. Sejak gambar lepas yang berurutan
+        // digabung menjadi satu batch, kedua halaman fixture ini muat dalam
+        // satu chunk dan hanya menghasilkan satu permintaan - konteksnya tidak
+        // hilang, tapi tidak ada permintaan kedua untuk memeriksanya. Memecah
+        // per balon mengembalikan skenarionya; requestParalel=1 menjamin hasil
+        // permintaan pertama sudah masuk riwayat sebelum yang kedua disusun.
+        cfg.maxBubblesPerRequest = 1
+        cfg.requestParalel = 1
         return cfg
     }
 

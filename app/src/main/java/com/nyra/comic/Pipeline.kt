@@ -40,6 +40,16 @@ class Pipeline(
     private val warnaKotak = HashMap<String, Palette.Colors>()
 
     /**
+     * Gaya tipografi terukur per kotak (ronde 25).
+     *
+     * Diisi bersamaan dengan [warnaKotak] saat deteksi RT-DETR, dari kotak
+     * teks asli kelas text_bubble. Sama seperti warna, isinya milik SATU
+     * bagian halaman saja dan harus disalin ke PartEntry begitu deteksi
+     * selesai — lihat catatan panjang di PartEntry.warna.
+     */
+    private val gayaKotak = HashMap<String, Typography.Gaya>()
+
+    /**
      * Seams for instrumentation. In production these stay null and the real
      * ONNX detector / provider factory are used.
      */
@@ -208,7 +218,9 @@ class Pipeline(
         rtDetector = null
         inpainter?.close()
         inpainter = null
+        bebaskanRujukan()
         warnaKotak.clear()
+        gayaKotak.clear()
     }
 
     fun cancel() {
@@ -260,26 +272,60 @@ class Pipeline(
         }
 
         try {
-            for ((idx, uri) in inputs.withIndex()) {
-                if (cancelled) break
+            // Gambar lepas yang berurutan digabung menjadi SATU batch.
+            //
+            // Dulu tiap berkas diproses sendiri-sendiri, jadi memilih 49
+            // halaman berarti 49 batch berisi satu balon-set masing-masing.
+            // Batch sekecil itu tidak pernah punya lebih dari satu chunk,
+            // sehingga gelombang paralel tidak punya apa pun untuk
+            // dijalankan bersamaan dan setelan requestParalel tidak
+            // berpengaruh sama sekali. Menggabungkannya juga membuat
+            // halaman-halaman itu berbagi konteks dan rujukan seperti bab
+            // sungguhan. Arsip dan PDF tetap diproses satu per satu karena
+            // masing-masing sudah merupakan batch tersendiri.
+            val kelompok = ArrayList<Pair<String, List<Pair<Uri, String>>>>()
+            for (uri in inputs) {
                 val name = Storage.displayName(ctx, uri)
                 val e = Storage.ext(name)
+                val terakhir = kelompok.lastOrNull()
+                if (e in Storage.IMAGE_EXTS && terakhir != null && terakhir.first == "img") {
+                    (terakhir.second as ArrayList<Pair<Uri, String>>).add(uri to name)
+                } else {
+                    kelompok.add(
+                        (if (e in Storage.IMAGE_EXTS) "img" else e) to
+                            arrayListOf(uri to name)
+                    )
+                }
+            }
+
+            var nomor = 0
+            for ((idx, grup) in kelompok.withIndex()) {
+                if (cancelled) break
+                val (jenis, isi) = grup
+                val e = if (jenis == "img") Storage.IMAGE_EXTS.first() else jenis
                 log("")
-                log("[${idx + 1}/${inputs.size}] $name")
+                if (jenis == "img" && isi.size > 1) {
+                    nomor += isi.size
+                    log("[${nomor - isi.size + 1}-$nomor/${inputs.size}] ${isi.size} gambar lepas")
+                } else {
+                    nomor++
+                    log("[$nomor/${inputs.size}] ${isi[0].second}")
+                }
 
                 // Riwayat direset hanya di batas bab yang sebenarnya, yaitu
-                // saat berkas berupa PDF atau arsip. Gambar lepas diproses satu
-                // per satu tetapi lazimnya berasal dari bab yang sama, jadi
-                // riwayatnya justru harus terus mengalir antar gambar.
+                // saat berkas berupa PDF atau arsip. Gambar lepas diproses
+                // bersama-sama tetapi lazimnya berasal dari bab yang sama,
+                // jadi riwayatnya justru harus terus mengalir antar gambar.
                 if (e in Storage.PDF_EXTS || e in Storage.ZIP_EXTS || e in Storage.RAR_EXTS ||
                     e in Storage.EPUB_EXTS) {
                     pageContext.clear()
                 }
 
                 val itemDir = File(workRoot, "item$idx").apply { mkdirs() }
+                val (uri, name) = isi[0]
                 when {
-                    e in Storage.IMAGE_EXTS ->
-                        handleImages(listOf(uri to name), provider, targetLanguage, outputTree, itemDir, result)
+                    jenis == "img" ->
+                        handleImages(isi, provider, targetLanguage, outputTree, itemDir, result)
                     e in Storage.PDF_EXTS ->
                         handlePdf(uri, name, provider, targetLanguage, outputTree, itemDir, result)
                     e in Storage.ZIP_EXTS || e in Storage.RAR_EXTS || e in Storage.EPUB_EXTS ->
@@ -590,6 +636,13 @@ class Pipeline(
          */
         val warna: Map<String, Palette.Colors> = emptyMap(),
         /**
+         * Gaya tipografi terukur milik bagian halaman INI (ronde 25).
+         * Disimpan di sini karena alasan yang sama persis dengan [warna]:
+         * peta milik Pipeline ditimpa oleh halaman berikutnya sebelum
+         * penggambaran terjadi.
+         */
+        val gaya: Map<String, Typography.Gaya> = emptyMap(),
+        /**
          * Kunci kotak teks-di-luar-balon milik bagian halaman INI.
          *
          * Ronde 18 — bug kembar dari warna di atas, dan yang ini merusak
@@ -698,6 +751,7 @@ class Pipeline(
                     PartEntry(
                         partFile, bmp.width, bmp.height, boxes,
                         warna = HashMap(warnaKotak),
+                        gaya = HashMap(gayaKotak),
                         lepas = HashSet(teksLepasKotak)
                     )
                 )
@@ -766,127 +820,70 @@ class Pipeline(
             log("[Multi-Page Batch] Stitching ${sisaPending.size} bubble(s) into ${chunks.size} " +
                 "mosaic request(s) (max $maxPer bubbles/request)...")
 
-            val numberPaint = renderer.mosaicNumberPaint()
-
-            for ((cIdx, chunk) in chunks.withIndex()) {
+            // Request dikirim per GELOMBANG. Di dalam satu gelombang request
+            // berjalan bersamaan; antar gelombang tetap berurutan supaya hasil
+            // gelombang N sempat masuk pageContext sebelum gelombang N+1
+            // menyusun prompt-nya. Ini menjaga konsistensi nama tokoh yang
+            // akan hilang kalau semua request dilepas sekaligus.
+            val lebarGelombang = cfg.requestParalel.coerceIn(1, 8)
+            var selesai = 0
+            for (gelombang in chunks.indices.chunked(lebarGelombang)) {
                 if (cancelled) break
-                progress(cIdx, chunks.size)
 
-                val idMapping = HashMap<String, PendingCrop>()
-                val crops = ArrayList<Mosaic.Crop>()
-                for ((i, pc) in chunk.withIndex()) {
-                    val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
-                    val localId = (i + 1).toString()
-                    idMapping[localId] = pc
-                    crops.add(Mosaic.Crop(localId, bmp))
-                }
-                if (crops.isEmpty()) continue
+                // Hasil tiap request ditampung dulu, lalu diterapkan ke state
+                // bersama secara BERURUTAN di thread ini setelah gelombang
+                // selesai. units/pageContext/cache/penghitung tidak dirancang
+                // untuk ditulis banyak thread, dan urutan penerapan yang tetap
+                // membuat hasil akhir sama persis dengan mode serial.
+                val hasilGelombang = arrayOfNulls<HasilChunk>(gelombang.size)
 
-                val shrunk = Mosaic.shrinkIfTooTall(crops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20)
-                val mosaic = Mosaic.build(shrunk, cfg, numberPaint)
-
-                val originals = crops.map { it.bitmap }
-                shrunk.forEach { if (it.bitmap !in originals) it.bitmap.recycle() }
-                originals.forEach { it.recycle() }
-
-                if (cfg.konteksHalaman && pageContext.size > 0) {
-                    log("  [i] Konteks: ${pageContext.size} halaman sebelumnya disertakan.")
-                }
-
-                // Gambar rujukan: halaman utuh asal balon-balon ini. Hanya bila
-                // seluruh chunk berasal dari satu bagian halaman yang sama,
-                // karena chunk dipotong per 20 balon dan bisa melintasi halaman.
-                var rujukan: Bitmap? = null
-                if (cfg.gambarRujukan) {
-                    val kunci = PageReference.pilih(
-                        chunk.map { PageReference.Kunci(it.unitIdx, it.partIdx) }
+                if (lebarGelombang == 1 || gelombang.size == 1) {
+                    hasilGelombang[0] = kerjakanChunk(
+                        chunks[gelombang[0]], gelombang[0], chunks.size, units,
+                        provider, lang
                     )
-                    if (kunci != null) {
-                        val pf = units.getOrNull(kunci.unitIdx)?.parts?.getOrNull(kunci.partIdx)?.file
-                        if (pf != null) {
-                            rujukan = Storage.decodeBitmap(pf, cfg.sisiRujukanMaks)
-                            if (rujukan != null) log("  [i] Rujukan: halaman utuh disertakan.")
-                        }
-                    } else {
-                        log("  [i] Rujukan dilewati: request ini memuat lebih dari satu halaman.")
+                } else {
+                    // Kegagalan fatal harus keluar dari thread pekerja.
+                    //
+                    // ApiKeyException sengaja dilempar ulang oleh
+                    // translateMosaic supaya run() berhenti dengan pesan yang
+                    // jelas. Kalau ia ikut ditelan bersama kegagalan biasa,
+                    // pengguna berkunci kedaluwarsa cuma melihat halaman
+                    // kosong sementara kita terus menghantam server yang
+                    // menolak. Disimpan lalu dilempar ulang setelah join
+                    // supaya thread lain tetap tuntas dengan rapi.
+                    val fatal = java.util.concurrent.atomic.AtomicReference<ApiKeyException>()
+                    val threads = gelombang.mapIndexed { slot, cIdx ->
+                        Thread {
+                            hasilGelombang[slot] = runCatching {
+                                kerjakanChunk(
+                                    chunks[cIdx], cIdx, chunks.size, units,
+                                    provider, lang
+                                )
+                            }.getOrElse { e ->
+                                if (e is ApiKeyException) fatal.compareAndSet(null, e)
+                                else log("  [!] Request ${cIdx + 1} gagal: ${e.message}")
+                                null
+                            }
+                        }.apply { name = "nyra-req-${cIdx + 1}"; start() }
                     }
+                    threads.forEach { it.join() }
+                    fatal.get()?.let { throw it }
                 }
 
-                log("  [Request ${cIdx + 1}/${chunks.size}] Translating ${shrunk.size} bubbles with ${provider.providerName}...")
-                val translations = translateMosaic(mosaic, provider, lang, rujukan)
-                mosaic.recycle()
-
-                if (translations.isEmpty()) {
-                    rujukan?.recycle()
-                    if (cancelled) {
-                        log("  [!] Request ${cIdx + 1} stopped before it returned.")
-                    } else {
-                        log("  [!] No translation returned for request ${cIdx + 1} " +
-                            "(${shrunk.size} bubble(s) left untranslated).")
-                    }
-                    continue
-                }
-                val diterima = HashMap<String, String>(translations)
-
-                // Model kadang membalas hanya sebagian nomor. Dulu sisanya
-                // dibiarkan dalam bahasa asli tanpa penjelasan, padahal
-                // deteksi dan potongannya sudah dibayar. Minta ulang khusus
-                // nomor yang hilang, sekali, sebelum menyerah.
-                val hilang = idMapping.keys.filter { it !in diterima }
-                if (hilang.isNotEmpty() && !cancelled) {
-                    log("  [!] ${hilang.size} nomor tidak dijawab model, meminta ulang...")
-                    val ulangCrops = ArrayList<Mosaic.Crop>()
-                    for (id in hilang) {
-                        val pc = idMapping[id] ?: continue
-                        val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
-                        ulangCrops.add(Mosaic.Crop(id, bmp))
-                    }
-                    if (ulangCrops.isNotEmpty()) {
-                        val ulangShrunk = Mosaic.shrinkIfTooTall(
-                            ulangCrops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20
-                        )
-                        val ulangMosaic = Mosaic.build(ulangShrunk, cfg, numberPaint)
-                        val asli = ulangCrops.map { it.bitmap }
-                        ulangShrunk.forEach { if (it.bitmap !in asli) it.bitmap.recycle() }
-                        asli.forEach { it.recycle() }
-                        val tambahan = runCatching {
-                            translateMosaic(ulangMosaic, provider, lang, rujukan)
-                        }.getOrElse { emptyMap() }
-                        ulangMosaic.recycle()
-                        for ((id, text) in tambahan) {
-                            if (id in idMapping && id !in diterima) diterima[id] = text
-                        }
-                        val masihHilang = idMapping.keys.count { it !in diterima }
-                        if (masihHilang > 0) {
-                            log("  [!] $masihHilang balon tetap tidak dijawab setelah diminta ulang.")
-                        } else {
-                            log("  [OK] Semua nomor yang tertinggal berhasil dilengkapi.")
-                        }
-                    }
+                for (h in hasilGelombang) {
+                    if (h == null) continue
+                    terapkanHasil(h, units, provider, lang)
                 }
 
-                rujukan?.recycle()
-
-                for ((localId, text) in diterima) {
-                    val pc = idMapping[localId] ?: continue
-                    units.getOrNull(pc.unitIdx)?.parts?.getOrNull(pc.partIdx)
-                        ?.translations?.put(pc.boxIdx.toString(), text)
-                    simpanKeCache(pc, provider, lang, text)
-                }
-
-                // Catat ke riwayat, dikelompokkan per halaman sumber: satu
-                // mosaik bisa memuat balon dari beberapa halaman sekaligus.
-                if (cfg.konteksHalaman) {
-                    val perHalaman = LinkedHashMap<String, MutableList<String>>()
-                    for ((localId, text) in diterima) {
-                        val pc = idMapping[localId] ?: continue
-                        val nama = units.getOrNull(pc.unitIdx)?.srcName ?: continue
-                        perHalaman.getOrPut(nama) { mutableListOf() }.add(text)
-                    }
-                    for ((nama, baris) in perHalaman) pageContext.add(nama, baris)
-                }
+                selesai += gelombang.size
+                progress(minOf(selesai, chunks.size), chunks.size)
             }
         }
+
+        // Pass 2 selesai: gambar rujukan terakhir tidak akan dipakai lagi, dan
+        // pass 3 butuh memorinya untuk mendekode halaman utuh.
+        bebaskanRujukan()
 
         // ---- Pass 3: render text back, one page at a time ----
         //
@@ -940,7 +937,7 @@ class Pipeline(
                 for ((numStr, text) in part.translations) {
                     val bIdx = numStr.toIntOrNull() ?: continue
                     val box = part.boxes.getOrNull(bIdx - 1) ?: continue
-                    if (drawText(canvas, bmp, box, text, lang, part.warna)) drawn++
+                    if (drawText(canvas, bmp, box, text, lang, part.warna, part.gaya)) drawn++
                 }
                 rendered.add(bmp)
             }
@@ -987,6 +984,209 @@ class Pipeline(
         return outputs.toList()
     }
 
+    /**
+     * Gambar rujukan yang sedang dipakai, beserta identitas halamannya.
+     *
+     * Satu halaman dengan 40 balon terpecah jadi beberapa chunk, dan dulu tiap
+     * chunk mendekode ulang halaman utuh yang sama dari disk hanya untuk
+     * dijadikan gambar rujukan. Cache berisi SATU halaman saja - chunk disusun
+     * berurutan per halaman, jadi satu slot sudah menangkap hampir semua
+     * pengulangan tanpa menambah puncak memori secara berarti (ini pipeline
+     * yang sengaja mengalirkan halaman lewat disk supaya bab 200 halaman tetap
+     * hidup di ponsel).
+     */
+    private var rujukanKunci: PageReference.Kunci? = null
+    private var rujukanBmp: Bitmap? = null
+    private val rujukanLock = Any()
+
+    /** Ambil gambar rujukan halaman [kunci], mendekode hanya bila berganti halaman. */
+    private fun rujukanTerpakai(kunci: PageReference.Kunci, pf: File): Bitmap? =
+        synchronized(rujukanLock) {
+            val ada = rujukanBmp
+            if (ada != null && !ada.isRecycled && rujukanKunci == kunci) return ada
+            ada?.let { runCatching { if (!it.isRecycled) it.recycle() } }
+            rujukanBmp = null
+            rujukanKunci = null
+            val baru = Storage.decodeBitmap(pf, cfg.sisiRujukanMaks) ?: return null
+            rujukanBmp = baru
+            rujukanKunci = kunci
+            return baru
+        }
+
+    private fun bebaskanRujukan() = synchronized(rujukanLock) {
+        rujukanBmp?.let { runCatching { if (!it.isRecycled) it.recycle() } }
+        rujukanBmp = null
+        rujukanKunci = null
+    }
+
+    /** Hasil satu request mosaik, belum diterapkan ke state bersama. */
+    private class HasilChunk(
+        val diterima: Map<String, String>,
+        val idMapping: Map<String, PendingCrop>
+    )
+
+    /**
+     * Bangun mosaik satu chunk, kirim ke model, dan kembalikan jawabannya.
+     *
+     * Fungsi ini AMAN dijalankan beberapa thread sekaligus: semua yang
+     * disentuhnya bersifat lokal (bitmap, mosaik, pemetaan nomor). Penulisan
+     * ke units, pageContext, dan cache sengaja TIDAK dilakukan di sini -
+     * itu tugas [terapkanHasil] yang berjalan berurutan.
+     */
+    private fun kerjakanChunk(
+        chunk: List<PendingCrop>, cIdx: Int, totalChunk: Int,
+        units: List<PageUnit>, provider: LLMProvider, lang: String
+    ): HasilChunk? {
+        if (cancelled) return null
+
+        // Paint BUKAN kelas yang aman dipakai banyak thread, dan Canvas
+        // menyimpan state gambar di dalamnya saat drawText berjalan. Karena
+        // beberapa chunk kini menyusun mosaiknya bersamaan, tiap thread harus
+        // memakai Paint-nya SENDIRI - satu instance bersama akan menghasilkan
+        // nomor yang salah ukuran atau hilang secara acak.
+        val numberPaint = renderer.mosaicNumberPaint()
+
+        val idMapping = HashMap<String, PendingCrop>()
+        val crops = ArrayList<Mosaic.Crop>()
+        for ((i, pc) in chunk.withIndex()) {
+            val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
+            val localId = (i + 1).toString()
+            idMapping[localId] = pc
+            crops.add(Mosaic.Crop(localId, bmp))
+        }
+        if (crops.isEmpty()) return null
+
+        val shrunk = Mosaic.shrinkIfTooTall(crops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20)
+        val mosaic = Mosaic.build(shrunk, cfg, numberPaint)
+
+        val originals = crops.map { it.bitmap }
+        shrunk.forEach { if (it.bitmap !in originals) it.bitmap.recycle() }
+        originals.forEach { it.recycle() }
+
+        if (cfg.konteksHalaman && pageContext.size > 0) {
+            log("  [i] Konteks: ${pageContext.size} halaman sebelumnya disertakan.")
+        }
+
+        // Gambar rujukan: halaman utuh asal balon-balon ini. Hanya bila
+        // seluruh chunk berasal dari satu bagian halaman yang sama,
+        // karena chunk dipotong per 20 balon dan bisa melintasi halaman.
+        var rujukan: Bitmap? = null
+        if (cfg.gambarRujukan) {
+            val kunci = PageReference.pilih(
+                chunk.map { PageReference.Kunci(it.unitIdx, it.partIdx) }
+            )
+            if (kunci != null) {
+                val pf = units.getOrNull(kunci.unitIdx)?.parts?.getOrNull(kunci.partIdx)?.file
+                if (pf != null) {
+                    rujukan = rujukanTerpakai(kunci, pf)
+                    if (rujukan != null) log("  [i] Rujukan: halaman utuh disertakan.")
+                }
+            } else {
+                log("  [i] Rujukan dilewati: request ini memuat lebih dari satu halaman.")
+            }
+        }
+
+        // Pemeriksaan terakhir sebelum permintaan BERBAYAR dikirim. Menyusun
+        // mosaik butuh waktu, dan dalam mode paralel tombol Stop bisa ditekan
+        // (atau chunk lain gagal fatal) tepat di sela itu. Request yang sudah
+        // terbang tidak bisa ditarik kembali - paling banyak requestParalel-1
+        // permintaan masih akan diselesaikan - tapi yang belum berangkat tidak
+        // boleh lagi menghabiskan kuota pengguna.
+        if (cancelled) {
+            mosaic.recycle()
+            log("  [!] Request ${cIdx + 1} dibatalkan sebelum dikirim.")
+            return null
+        }
+
+        log("  [Request ${cIdx + 1}/$totalChunk] Translating ${shrunk.size} bubbles with ${provider.providerName}...")
+        val translations = translateMosaic(mosaic, provider, lang, rujukan)
+        mosaic.recycle()
+
+        if (translations.isEmpty()) {
+            // rujukan TIDAK di-recycle: bitmapnya milik cacheRujukan dan masih
+            // dipakai chunk lain dari halaman yang sama.
+            if (cancelled) {
+                log("  [!] Request ${cIdx + 1} stopped before it returned.")
+            } else {
+                log("  [!] No translation returned for request ${cIdx + 1} " +
+                    "(${shrunk.size} bubble(s) left untranslated).")
+            }
+            return null
+        }
+        val diterima = HashMap<String, String>(translations)
+
+        // Model kadang membalas hanya sebagian nomor. Dulu sisanya
+        // dibiarkan dalam bahasa asli tanpa penjelasan, padahal
+        // deteksi dan potongannya sudah dibayar. Minta ulang khusus
+        // nomor yang hilang, sekali, sebelum menyerah.
+        val hilang = idMapping.keys.filter { it !in diterima }
+        if (hilang.isNotEmpty() && !cancelled) {
+            log("  [!] ${hilang.size} nomor tidak dijawab model, meminta ulang...")
+            val ulangCrops = ArrayList<Mosaic.Crop>()
+            for (id in hilang) {
+                val pc = idMapping[id] ?: continue
+                val bmp = Storage.decodeBitmap(pc.file, 4000) ?: continue
+                ulangCrops.add(Mosaic.Crop(id, bmp))
+            }
+            if (ulangCrops.isNotEmpty()) {
+                val ulangShrunk = Mosaic.shrinkIfTooTall(
+                    ulangCrops, cfg.maxTinggiMosaik, cfg.jarakAntarPotongan, 20
+                )
+                val ulangMosaic = Mosaic.build(ulangShrunk, cfg, numberPaint)
+                val asli = ulangCrops.map { it.bitmap }
+                ulangShrunk.forEach { if (it.bitmap !in asli) it.bitmap.recycle() }
+                asli.forEach { it.recycle() }
+                val tambahan = runCatching {
+                    translateMosaic(ulangMosaic, provider, lang, rujukan)
+                }.getOrElse { emptyMap() }
+                ulangMosaic.recycle()
+                for ((id, text) in tambahan) {
+                    if (id in idMapping && id !in diterima) diterima[id] = text
+                }
+                val masihHilang = idMapping.keys.count { it !in diterima }
+                if (masihHilang > 0) {
+                    log("  [!] $masihHilang balon tetap tidak dijawab setelah diminta ulang.")
+                } else {
+                    log("  [OK] Semua nomor yang tertinggal berhasil dilengkapi.")
+                }
+            }
+        }
+
+        return HasilChunk(diterima, idMapping)
+    }
+
+    /**
+     * Terapkan jawaban satu request ke state bersama.
+     *
+     * SELALU dipanggil dari thread pemanggil pass 2, satu per satu dan dalam
+     * urutan chunk aslinya. units, cache, dan pageContext karena itu tidak
+     * pernah disentuh dua thread sekaligus, dan riwayat konteks tersusun dalam
+     * urutan yang sama seperti mode serial.
+     */
+    private fun terapkanHasil(
+        h: HasilChunk, units: List<PageUnit>, provider: LLMProvider, lang: String
+    ) {
+        for ((localId, text) in h.diterima) {
+            val pc = h.idMapping[localId] ?: continue
+            units.getOrNull(pc.unitIdx)?.parts?.getOrNull(pc.partIdx)
+                ?.translations?.put(pc.boxIdx.toString(), text)
+            simpanKeCache(pc, provider, lang, text)
+        }
+
+        // Catat ke riwayat, dikelompokkan per halaman sumber: satu
+        // mosaik bisa memuat balon dari beberapa halaman sekaligus.
+        if (cfg.konteksHalaman) {
+            val perHalaman = LinkedHashMap<String, MutableList<String>>()
+            for ((localId, text) in h.diterima) {
+                val pc = h.idMapping[localId] ?: continue
+                val nama = units.getOrNull(pc.unitIdx)?.srcName ?: continue
+                perHalaman.getOrPut(nama) { mutableListOf() }.add(text)
+            }
+            for ((nama, baris) in perHalaman) pageContext.add(nama, baris)
+        }
+    }
+
+
     // ------------------------------------------------------------------
     // Steps
     // ------------------------------------------------------------------
@@ -1003,6 +1203,7 @@ class Pipeline(
      */
     private fun detectBoxes(bmp: Bitmap): List<IntArray> {
         warnaKotak.clear()
+        gayaKotak.clear()
         teksLepasKotak.clear()
         blokTeksKotak.clear()
 
@@ -1159,6 +1360,23 @@ class Pipeline(
                 val c = runCatching { Palette.sample(bmp, balon[i], pasangan[i]) }
                     .getOrDefault(Palette.DEFAULT)
                 if (c.diukur) warnaKotak[kunciKotak(balon[i])] = c
+            }
+        }
+
+        // Ronde 25: ukur tipografi teks ASLI selagi piksel aslinya masih utuh.
+        // Setelah inpaint tidak ada lagi yang bisa diukur, jadi pengukuran
+        // harus terjadi di sini, bukan saat menggambar. Hanya kotak yang
+        // punya pasangan teks (kelas text_bubble) yang bisa diukur; balon
+        // tanpa pasangan tetap memakai Gaya.BAWAAN alias perilaku lama.
+        if (cfg.tipografiAdaptif) {
+            val piksel = IntArray(bmp.width * bmp.height)
+            bmp.getPixels(piksel, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+            for (i in balon.indices) {
+                val teks = pasangan[i] ?: continue
+                val g = runCatching {
+                    Typography.ukur(piksel, bmp.width, bmp.height, balon[i], teks)
+                }.getOrDefault(Typography.Gaya.BAWAAN)
+                if (g.terukur) gayaKotak[kunciKotak(balon[i])] = g
             }
         }
 
@@ -1321,9 +1539,41 @@ class Pipeline(
             )
             if (masked !== crop) { crop.recycle(); crop = masked }
         }
-        val scaled = Mosaic.scale(crop, cfg.skalaPotonganMosaik)
+        // Skala potongan dibatasi oleh tinggi yang MEMANG akan selamat.
+        //
+        // Ronde 26 — dulu potongan selalu dinaikkan skalaPotonganMosaik (2.0x),
+        // ditulis ke disk, dibaca lagi, lalu shrinkIfTooTall menurunkannya ke
+        // ~0.51x supaya mosaik muat di maxTinggiMosaik. Skala akhirnya 1.02x:
+        // praktis ukuran asli, tetapi dibayar dengan DUA kali resample bilinear
+        // (yang melunakkan tepi huruf) dan berkas disk ~3.8x lebih besar.
+        //
+        // Sekarang jatah tinggi tiap potongan dihitung di muka, jadi potongan
+        // langsung dibuat pada ukuran yang akan dikirim. Satu resample saja,
+        // hasilnya sedikit lebih tajam. Batas bawahnya 1.0: tahap ini tidak
+        // boleh MENGURANGI resolusi - kalau mosaik masih kepanjangan (potongan
+        // tinggi-tinggi), shrinkIfTooTall tetap jadi jaring pengaman.
+        val skalaEfektif = skalaPotongan(ch)
+        val scaled = Mosaic.scale(crop, skalaEfektif)
         if (scaled !== crop) crop.recycle()
         return scaled
+    }
+
+    /**
+     * Skala untuk satu potongan setinggi [tinggiAsli] px.
+     *
+     * Jatah tinggi per potongan = sisa maxTinggiMosaik setelah dikurangi jarak
+     * antar potongan dan padding, dibagi jumlah potongan per request. Menaikkan
+     * potongan melebihi jatah itu selalu sia-sia: shrinkIfTooTall akan
+     * mengembalikannya lagi.
+     */
+    internal fun skalaPotongan(tinggiAsli: Int): Float {
+        val diminta = cfg.skalaPotonganMosaik
+        if (diminta <= 1f || tinggiAsli <= 0) return diminta
+        val n = max(1, cfg.maxBubblesPerRequest)
+        val jatah = (cfg.maxTinggiMosaik - n * cfg.jarakAntarPotongan - 20).toFloat() / n
+        if (jatah <= 0f) return 1f
+        val batas = jatah / tinggiAsli
+        return diminta.coerceAtMost(max(1f, batas))
     }
 
     private fun translateMosaic(
@@ -1383,6 +1633,7 @@ class Pipeline(
                 page.boxes.addAll(part.boxes)
                 page.translations.putAll(part.translations)
                 page.colors.putAll(part.warna)
+                page.styles.putAll(part.gaya)
                 page.freeText.addAll(part.lepas)
                 prj.pages.add(page)
             }
@@ -1423,14 +1674,15 @@ class Pipeline(
         for ((numStr, text) in page.translations) {
             val bIdx = numStr.toIntOrNull() ?: continue
             val box = page.boxes.getOrNull(bIdx - 1) ?: continue
-            drawText(canvas, bmp, box, text, prj.targetLanguage, page.colors)
+            drawText(canvas, bmp, box, text, prj.targetLanguage, page.colors, page.styles)
         }
         return bmp
     }
 
     private fun drawText(
         canvas: Canvas, bmp: Bitmap, box: IntArray, text0: String, lang: String,
-        warnaHalaman: Map<String, Palette.Colors> = emptyMap()
+        warnaHalaman: Map<String, Palette.Colors> = emptyMap(),
+        gayaHalaman: Map<String, Typography.Gaya> = emptyMap()
     ): Boolean {
         val text = text0.trim()
         if (text.isEmpty() || text.uppercase() == "SKIP") return false
@@ -1461,7 +1713,11 @@ class Pipeline(
             targetLanguage = lang,
             maskMarginRatio = cfg.maskMarginRatio,
             colors = warna,
-            ikutiKontur = cfg.konturBalon
+            ikutiKontur = cfg.konturBalon,
+            // Sama seperti warna: tanpa entri, Gaya.BAWAAN = perilaku lama.
+            gaya = if (cfg.tipografiAdaptif) {
+                gayaHalaman[kunciKotak(box)] ?: Typography.Gaya.BAWAAN
+            } else Typography.Gaya.BAWAAN
         )
         return true
     }

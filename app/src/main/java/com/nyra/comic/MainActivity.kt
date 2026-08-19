@@ -271,6 +271,7 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
 
         b.sbBubbles.progress = (cfg.maxBubblesPerRequest - 1).coerceIn(0, 29)
         b.sbDelay.progress = (cfg.minRequestDelay * 10).toInt().coerceIn(0, 200)
+        b.sbParalel.progress = (cfg.requestParalel - 1).coerceIn(0, 7)
         b.sbPadX.progress = (cfg.padXRatio * 100).toInt().coerceIn(0, 100)
         b.sbPadY.progress = (cfg.padYRatio * 100).toInt().coerceIn(0, 100)
         b.sbMask.progress = (cfg.maskMarginRatio * 100).toInt().coerceIn(0, 40)
@@ -283,6 +284,13 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         bindSeek(b.sbDelay) {
             val v = it / 10f; cfg.minRequestDelay = v
             b.lblDelay.text = "Jeda antar permintaan: ${"%.1f".format(v)}s"
+        }
+        bindSeek(b.sbParalel) {
+            val v = it + 1; cfg.requestParalel = v
+            b.lblParalel.text = if (v == 1)
+                "Permintaan bersamaan: 1 (satu per satu)"
+            else
+                "Permintaan bersamaan: $v"
         }
         bindSeek(b.sbPadX) {
             val v = it / 100f; cfg.padXRatio = v
@@ -323,6 +331,8 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         b.swRtdetr.setOnCheckedChangeListener { _, checked -> cfg.detektorRtdetr = checked }
         b.swWarna.isChecked = cfg.warnaOtomatis
         b.swWarna.setOnCheckedChangeListener { _, checked -> cfg.warnaOtomatis = checked }
+        b.swTipografi.isChecked = cfg.tipografiAdaptif
+        b.swTipografi.setOnCheckedChangeListener { _, checked -> cfg.tipografiAdaptif = checked }
         b.swKontur.isChecked = cfg.konturBalon
         b.swKontur.setOnCheckedChangeListener { _, checked -> cfg.konturBalon = checked }
 
@@ -405,6 +415,7 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         b.btnResetTweaks.setOnClickListener {
             cfg.maxBubblesPerRequest = 20
             cfg.minRequestDelay = 2.0f
+            cfg.requestParalel = 4
             cfg.padXRatio = 0.40f
             cfg.padYRatio = 0.25f
             cfg.maskMarginRatio = 0.12f
@@ -415,6 +426,7 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
             cfg.detektorRtdetr = true
             cfg.warnaOtomatis = true
             cfg.konturBalon = true
+            cfg.tipografiAdaptif = true
             cfg.bacaKananKeKiri = true
             cfg.arahBacaOtomatis = true
             cfg.cacheTerjemahan = true

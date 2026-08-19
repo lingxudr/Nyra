@@ -29,8 +29,8 @@ android {
         applicationId = "com.nyra.comic"
         minSdk = 24
         targetSdk = 34
-        versionCode = 17
-        versionName = "2.3.1"
+        versionCode = 19
+        versionName = "2.5.0"
     }
 
     // Kredensial penandatanganan TIDAK ditulis di sini.

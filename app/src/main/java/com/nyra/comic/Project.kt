@@ -53,6 +53,17 @@ class Project(
         val translations: MutableMap<String, String> = mutableMapOf(),
         /** Warna terukur per kotak, kunci = "x1,y1,x2,y2". */
         val colors: MutableMap<String, Palette.Colors> = mutableMapOf(),
+        /**
+         * Gaya tipografi terukur per kotak, kunci sama dengan [colors].
+         *
+         * Ikut disimpan karena alasan yang sama dengan warna garis luar di
+         * ronde 22: gaya diukur dari piksel ASLI saat deteksi, dan halaman
+         * bersih di folder proyek memang masih asli — tetapi mengukur ulang
+         * berarti memuat dan memindai seluruh halaman lagi tiap kali editor
+         * menggambar. Tanpa entri, penggambaran jatuh ke Gaya.BAWAAN, jadi
+         * proyek lama tetap terbaca.
+         */
+        val styles: MutableMap<String, Typography.Gaya> = mutableMapOf(),
         /** Kunci kotak yang berasal dari teks di LUAR balon. */
         val freeText: MutableSet<String> = mutableSetOf()
     ) {
@@ -93,6 +104,9 @@ class Project(
             val co = JSONObject()
             for ((k, c) in p.colors) co.put(k, colorsToJson(c))
             po.put("colors", co)
+            val so = JSONObject()
+            for ((k, g) in p.styles) so.put(k, gayaToJson(g))
+            po.put("styles", so)
             po.put("freeText", JSONArray(p.freeText.toList()))
             arr.put(po)
         }
@@ -134,6 +148,28 @@ class Project(
             c.garisLuar?.let { j.put("garisLuar", it) }
             return j
         }
+
+        fun gayaToJson(g: Typography.Gaya): JSONObject {
+            val j = JSONObject()
+            j.put("arah", g.arah.name)
+            j.put("rasioIsi", g.rasioIsi.toDouble())
+            j.put("kepadatan", g.kepadatan.toDouble())
+            j.put("goresan", g.tebalGoresan.toDouble())
+            j.put("berat", g.berat.name)
+            j.put("terukur", g.terukur)
+            return j
+        }
+
+        fun gayaFromJson(j: JSONObject): Typography.Gaya = Typography.Gaya(
+            arah = runCatching { Typography.Arah.valueOf(j.optString("arah")) }
+                .getOrDefault(Typography.Arah.TIDAK_JELAS),
+            rasioIsi = j.optDouble("rasioIsi", Typography.ISI_BAWAAN.toDouble()).toFloat(),
+            kepadatan = j.optDouble("kepadatan", 0.0).toFloat(),
+            tebalGoresan = j.optDouble("goresan", 0.0).toFloat(),
+            berat = runCatching { Typography.Berat.valueOf(j.optString("berat")) }
+                .getOrDefault(Typography.Berat.NORMAL),
+            terukur = j.optBoolean("terukur", false)
+        )
 
         fun colorsFromJson(j: JSONObject): Palette.Colors {
             val baris = j.optJSONArray("baris")
@@ -178,6 +214,11 @@ class Project(
                 po.optJSONObject("colors")?.let { c ->
                     for (k in c.keys()) {
                         runCatching { page.colors[k] = colorsFromJson(c.getJSONObject(k)) }
+                    }
+                }
+                po.optJSONObject("styles")?.let { g ->
+                    for (k in g.keys()) {
+                        runCatching { page.styles[k] = gayaFromJson(g.getJSONObject(k)) }
                     }
                 }
                 po.optJSONArray("freeText")?.let { f ->

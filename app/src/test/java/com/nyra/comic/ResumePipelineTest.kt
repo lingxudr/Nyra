@@ -104,6 +104,13 @@ class ResumePipelineTest {
         // Satu balon per permintaan: jumlah permintaan jadi sebanding dengan
         // jumlah halaman, sehingga penghematan bisa dihitung.
         cfg.maxBubblesPerRequest = 1
+        // Request dikirim satu per satu. Yang diuji di sini adalah RESUME,
+        // dan resume hanya punya arti kalau sebuah jalan bisa terputus di
+        // tengah. Dengan gelombang paralel, ketiga halaman berangkat sebelum
+        // pembatalan sempat terbaca, bab jadi tuntas, dan tidak ada sisa yang
+        // bisa dilanjutkan - skenarionya lenyap, bukan resume-nya yang rusak.
+        // Perilaku paralel diuji terpisah di GelombangParalelTest.
+        cfg.requestParalel = 1
         return cfg
     }
 

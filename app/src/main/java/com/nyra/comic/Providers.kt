@@ -26,17 +26,24 @@ abstract class LLMProvider(val apiKey: String, modelName: String) {
     abstract val providerName: String
 
     /**
-     * Pemakaian token panggilan terakhir yang berhasil.
+     * Pemakaian token panggilan terakhir yang berhasil, DIPISAH PER THREAD.
      *
-     * Diisi dari badan respons, bukan ditaksir. Pipeline membacanya tepat
-     * setelah tiap panggilan; sifatnya "terakhir menang", jadi ia hanya sah
-     * dibaca segera setelah panggilan dan tidak boleh dipakai lintas thread.
-     * Nilai awal KOSONG (tanpaData = true) supaya panggilan yang gagal tidak
-     * ikut dihitung sebagai nol token yang seolah-olah pasti.
+     * Diisi dari badan respons, bukan ditaksir. Nilai awal KOSONG
+     * (tanpaData = true) supaya panggilan yang gagal tidak ikut dihitung
+     * sebagai nol token yang seolah-olah pasti.
+     *
+     * Ronde 26 — pass 2 sekarang mengirim beberapa request bersamaan. Kalau
+     * nilai ini satu variabel bersama, request B bisa menimpanya di antara
+     * saat request A kembali dan saat pipeline membacanya, sehingga token
+     * milik A hilang dan token milik B dihitung dua kali. Menyimpannya per
+     * thread membuat tiap request membaca angkanya sendiri; penjumlahan
+     * totalnya tetap dilakukan Usage.Penghitung yang @Synchronized.
      */
-    @Volatile
-    var pemakaianTerakhir: Usage.Pakai = Usage.Pakai.KOSONG
-        protected set
+    private val pemakaianThread = ThreadLocal.withInitial { Usage.Pakai.KOSONG }
+
+    var pemakaianTerakhir: Usage.Pakai
+        get() = pemakaianThread.get() ?: Usage.Pakai.KOSONG
+        protected set(v) { pemakaianThread.set(v) }
 
     /** Catat pemakaian dari badan respons mentah. */
     protected fun catatPemakaian(badan: String?) {
@@ -44,15 +51,16 @@ abstract class LLMProvider(val apiKey: String, modelName: String) {
     }
 
     /**
-     * Model yang benar-benar melayani panggilan terakhir.
-     *
-     * Biasanya sama dengan [modelName], tapi Gemini bisa jatuh ke model
-     * cadangan saat model utama 503/429 - dan tarif cadangan itu berbeda,
-     * jadi biaya harus dihitung dengan nama ini, bukan nama yang diminta.
+     * Model yang benar-benar melayani panggilan terakhir — per thread,
+     * dengan alasan yang sama seperti [pemakaianTerakhir]: tarif model cadangan
+     * berbeda, jadi biaya harus dihitung dengan nama model yang melayani
+     * request INI, bukan request tetangga yang kebetulan selesai belakangan.
      */
-    @Volatile
-    var modelTerakhir: String = modelName
-        protected set
+    private val modelThread = ThreadLocal.withInitial { modelName }
+
+    var modelTerakhir: String
+        get() = modelThread.get() ?: modelName
+        protected set(v) { modelThread.set(v) }
 
     open fun validateApiKey(): Boolean = apiKey.isNotBlank()
 

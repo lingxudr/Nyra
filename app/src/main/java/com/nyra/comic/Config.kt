@@ -163,6 +163,24 @@ class Config internal constructor(ctx: Context) {
         get() = prefs.getFloat("request_delay", 2.0f)
         set(v) = prefs.edit().putFloat("request_delay", v).apply()
 
+    /**
+     * Berapa request mosaik yang boleh berjalan bersamaan pada pass 2.
+     *
+     * Dulu pass 2 sepenuhnya serial, jadi 49 halaman = 49 request berurutan
+     * dan waktu tempuh didominasi menunggu jaringan, bukan bekerja. Request
+     * dikirim dalam GELOMBANG: tiap gelombang ditunggu selesai sebelum
+     * gelombang berikutnya berangkat, supaya hasil satu gelombang tetap masuk
+     * ke pageContext dan menjadi konteks gelombang sesudahnya - konsistensi
+     * nama tokoh terjaga, tapi tetap 4x lebih cepat.
+     *
+     * 4 aman untuk kuota gratis. Terlalu tinggi justru melambat: 429 memicu
+     * backoff 5*2^n yang jauh lebih mahal daripada keuntungan paralelnya.
+     * Dijepit 1..8; 1 berarti perilaku serial seperti dulu.
+     */
+    var requestParalel: Int
+        get() = prefs.getInt("request_paralel", 4).coerceIn(1, 8)
+        set(v) = prefs.edit().putInt("request_paralel", v.coerceIn(1, 8)).apply()
+
     // ---- Tweakables (mirrors TWEAKABLE_PARAMS) ----
     var padXRatio: Float
         get() = prefs.getFloat("pad_x", 0.40f)
@@ -241,6 +259,18 @@ class Config internal constructor(ctx: Context) {
     var warnaOtomatis: Boolean
         get() = prefs.getBoolean("warna_otomatis", true)
         set(v) = prefs.edit().putBoolean("warna_otomatis", v).apply()
+
+    /**
+     * Tipografi adaptif (ronde 25): ukur teks asli di tiap balon — seberapa
+     * penuh balonnya, setebal apa hurufnya — lalu tiru pada terjemahannya.
+     *
+     * Semuanya diukur dari piksel, bukan diminta ke AI: tidak ada tambahan
+     * token, dan hasilnya sama tiap kali dijalankan. Kalau dimatikan,
+     * penggambaran kembali persis ke perilaku lama lewat Gaya.BAWAAN.
+     */
+    var tipografiAdaptif: Boolean
+        get() = prefs.getBoolean("tipografi_adaptif", true)
+        set(v) = prefs.edit().putBoolean("tipografi_adaptif", v).apply()
 
     /**
      * Timpa balon mengikuti bentuk aslinya, bukan persegi membulat.

@@ -172,6 +172,7 @@ object BoxEdit {
         // yang justru TIDAK disunting pengguna.
         if (page.boxes.none { kunciKotak(it) == kunci }) {
             page.colors.remove(kunci)
+            page.styles.remove(kunci)
             page.freeText.remove(kunci)
         }
         page.translations.remove(nomor.toString())
@@ -193,6 +194,11 @@ object BoxEdit {
         val baru = kunciKotak(box)
         if (lama != baru) {
             page.colors.remove(lama)?.let { page.colors[baru] = it }
+            // Gaya ikut pindah bersama warna: kalau tertinggal di kunci lama,
+            // kotak yang digeser kehilangan tipografinya dan - lebih buruk -
+            // kotak baru yang kebetulan menempati kunci itu mewarisi gaya
+            // milik kotak lain.
+            page.styles.remove(lama)?.let { page.styles[baru] = it }
             if (page.freeText.remove(lama)) page.freeText.add(baru)
         }
         page.boxes[idx] = box

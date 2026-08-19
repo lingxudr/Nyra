@@ -104,6 +104,33 @@ class TextRenderer(ctx: Context) {
         val spacingRatio: Float, val maxFont: Int, val minFont: Int
     )
 
+    /**
+     * Setting untuk balon ini: hasil pengukuran teks asli bila ada, kalau
+     * tidak jatuh ke tiga tuple lama.
+     *
+     * Yang diambil dari pengukuran hanyalah skala (seberapa penuh balon
+     * aslinya) dan jarak antar baris. Batas font tetap dari tuple lama,
+     * sebab batas itu yang menjaga teks tidak pernah menjadi raksasa pada
+     * balon besar berteks pendek.
+     */
+    private fun settingUntuk(
+        boxW: Int, boxH: Int, text: String, gaya: Typography.Gaya
+    ): Setting {
+        val dasar = chooseSetting(boxW, boxH, text)
+        if (!gaya.terukur) return dasar
+        val rencana = Typography.putuskan(
+            gaya = gaya,
+            ukuranMuat = dasar.maxFont,
+            panjangTeks = text.length,
+            bahasaTegak = false
+        )
+        return dasar.copy(
+            skalaW = rencana.skalaLebar,
+            skalaH = rencana.skalaTinggi,
+            spacingRatio = rencana.spasiBaris
+        )
+    }
+
     /** pilih_setting_teks */
     private fun chooseSetting(boxW: Int, boxH: Int, text: String): Setting {
         val clean = text.replace(" ", "").replace("\n", "")
@@ -120,10 +147,17 @@ class TextRenderer(ctx: Context) {
         }
     }
 
-    private fun makePaint(tf: Typeface, size: Float): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private fun makePaint(
+        tf: Typeface, size: Float, tebal: Boolean = false
+    ): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = tf
         textSize = size
         isSubpixelText = true
+        // Komika tidak punya berkas bold terpisah, jadi penebalan sintetis
+        // adalah satu-satunya cara mengikuti huruf tebal asli. Diterapkan
+        // sebelum pengukuran supaya lebar yang dihitung memang lebar yang
+        // digambar - kalau tidak, teks tebal akan luber keluar balon.
+        isFakeBoldText = tebal
     }
 
     /** pecah_kata_hyphen_jika_panjang */
@@ -189,14 +223,15 @@ class TextRenderer(ctx: Context) {
         backgroundPatch: Boolean, targetLanguage: String?,
         maskMarginRatio: Float,
         colors: Palette.Colors = Palette.DEFAULT,
-        ikutiKontur: Boolean = false
+        ikutiKontur: Boolean = false,
+        gaya: Typography.Gaya = Typography.Gaya.BAWAAN
     ) {
         var text = text0.trim()
         if (text.isEmpty()) return
 
         val boxW = max(1, x2 - x1)
         val boxH = max(1, y2 - y1)
-        val setting = chooseSetting(boxW, boxH, text)
+        val setting = settingUntuk(boxW, boxH, text, gaya)
         val langKey = (targetLanguage ?: "").lowercase()
 
         if (!backgroundPatch) {
@@ -235,17 +270,20 @@ class TextRenderer(ctx: Context) {
         val maxH = boxH * setting.skalaH
         val tf = fontFor(text)
 
-        var bestFontSize = setting.minFont
-        for (size in setting.maxFont downTo setting.minFont) {
-            val paint = makePaint(tf, size.toFloat())
+        // Pencarian biner, bukan perulangan menurun: hasilnya ukuran yang
+        // sama persis (kecocokan bersifat monotonik) dengan ~7 pengukuran
+        // alih-alih sampai 89 per balon.
+        val tebal = gaya.terukur && gaya.berat == Typography.Berat.TEBAL
+        val bestFontSize = Typography.cariUkuran(setting.minFont, setting.maxFont) { size ->
+            val paint = makePaint(tf, size.toFloat(), tebal)
             val spacing = max(1f, size * setting.spacingRatio)
             val lines = wrapText(text, paint, maxW)
             val block = measureBlock(lines, paint, spacing)
-            if (block.width <= maxW && block.height <= maxH) { bestFontSize = size; break }
+            block.width <= maxW && block.height <= maxH
         }
 
         val finalSize = max(setting.minFont, (bestFontSize * setting.fontScale).toInt())
-        val paint = makePaint(tf, finalSize.toFloat())
+        val paint = makePaint(tf, finalSize.toFloat(), tebal)
         val spacing = max(1f, finalSize * setting.spacingRatio)
         val lines = wrapText(text, paint, maxW)
         val block = measureBlock(lines, paint, spacing)
@@ -253,7 +291,11 @@ class TextRenderer(ctx: Context) {
         val centerX = x1 + boxW / 2f
         val startY = y1 + (boxH - block.height) / 2f
 
-        val strokeW = max(1f, finalSize / 11f)
+        // Garis luar mengikuti berat huruf asli: huruf tebal perlu garis lebih
+        // tegas, huruf tipis perlu yang lebih halus supaya tidak tertelan.
+        val strokeW = if (gaya.terukur) {
+            Typography.lebarGarisLuar(finalSize, gaya.berat)
+        } else max(1f, finalSize / 11f)
 
         if (backgroundPatch) {
             val pad = max(6f, finalSize / 2f)
@@ -267,7 +309,7 @@ class TextRenderer(ctx: Context) {
             )
         }
 
-        val strokePaint = makePaint(tf, finalSize.toFloat()).apply {
+        val strokePaint = makePaint(tf, finalSize.toFloat(), tebal).apply {
             style = Paint.Style.STROKE
             strokeWidth = strokeW * 2f
             strokeJoin = Paint.Join.ROUND
@@ -276,7 +318,7 @@ class TextRenderer(ctx: Context) {
             color = colors.garisLuar ?: colors.background
             textAlign = Paint.Align.CENTER
         }
-        val fillPaint = makePaint(tf, finalSize.toFloat()).apply {
+        val fillPaint = makePaint(tf, finalSize.toFloat(), tebal).apply {
             style = Paint.Style.FILL
             color = colors.foreground
             textAlign = Paint.Align.CENTER
@@ -370,17 +412,14 @@ class TextRenderer(ctx: Context) {
         val maxW = boxW * setting.skalaW
         val maxH = boxH * setting.skalaH
 
-        var bestFontSize = setting.minFont
-        var bestColumns: List<String> = emptyList()
-
-        for (size in setting.maxFont downTo setting.minFont) {
+        // Sama seperti jalur mendatar: pencarian biner, hasil identik.
+        val bestFontSize = Typography.cariUkuran(setting.minFont, setting.maxFont) { size ->
             val charsPerCol = max(1, (maxH / size).toInt())
-            val columns = text.chunked(charsPerCol)
-            if (columns.size * size <= maxW) {
-                bestFontSize = size
-                bestColumns = columns
-                break
-            }
+            text.chunked(charsPerCol).size * size <= maxW
+        }
+        var bestColumns: List<String> = run {
+            val charsPerCol = max(1, (maxH / bestFontSize).toInt())
+            text.chunked(charsPerCol)
         }
         if (bestColumns.isEmpty()) {
             val charsPerCol = max(1, (maxH / setting.minFont).toInt())

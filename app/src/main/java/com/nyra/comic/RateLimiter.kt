@@ -5,23 +5,40 @@ import kotlin.math.pow
 /** Port of cypy/core/services/rate_limiter.py */
 class RateLimiter(private val cfg: Config, private val log: (String) -> Unit) {
 
-    @Volatile private var lastCallTime: Long = 0L
     @Volatile var cancelled: Boolean = false
 
     private val lock = Any()
 
-    private fun waitForSlot() {
+    /**
+     * Waktu paling awal sebuah request BOLEH berangkat.
+     *
+     * Dulu gerbang ini memegang monitor selama tidur, jadi request kedua tidak
+     * bisa berangkat sebelum request pertama benar-benar SELESAI - laju dan
+     * jumlah-yang-sedang-jalan tergabung menjadi satu, dan pipeline terpaksa
+     * serial. Sekarang tiap pemanggil MEMESAN slotnya secara atomik lalu tidur
+     * DI LUAR kunci. Efeknya: keberangkatan tetap berjarak minRequestDelay
+     * (laju terjaga, kuota aman), tetapi request yang sudah berangkat berjalan
+     * tumpang tindih. Batas berapa yang boleh jalan bersamaan diurus pemanggil
+     * lewat ukuran thread pool-nya, bukan di sini.
+     */
+    private var nextSlot: Long = 0L
+
+    /** Pesan slot berikutnya secara atomik; kembalikan kapan boleh berangkat. */
+    private fun reserveSlot(): Long {
         val minDelay = (cfg.minRequestDelay * 1000).toLong()
-        if (minDelay <= 0) return
+        val now = System.currentTimeMillis()
+        if (minDelay <= 0) return now
         synchronized(lock) {
-            val now = System.currentTimeMillis()
-            val elapsed = now - lastCallTime
-            if (elapsed < minDelay) {
-                val sleep = minDelay - elapsed
-                sleepInterruptible(sleep)
-            }
-            lastCallTime = System.currentTimeMillis()
+            val start = maxOf(now, nextSlot)
+            nextSlot = start + minDelay
+            return start
         }
+    }
+
+    private fun waitForSlot() {
+        val start = reserveSlot()
+        val sisa = start - System.currentTimeMillis()
+        if (sisa > 0) sleepInterruptible(sisa)
     }
 
     private fun sleepInterruptible(ms: Long) {
@@ -39,7 +56,6 @@ class RateLimiter(private val cfg: Config, private val log: (String) -> Unit) {
         for (attempt in 0 until maxRetries) {
             if (cancelled) return null
             try {
-                synchronized(lock) { lastCallTime = System.currentTimeMillis() }
                 return call()
             } catch (ake: ApiKeyException) {
                 throw ake
