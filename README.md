@@ -14,7 +14,7 @@ warna, dan bentuk aslinya.
 [![platform](https://img.shields.io/badge/platform-Android%207.0%2B-3DDC84)](#)
 [![language](https://img.shields.io/badge/Kotlin-100%25-7F52FF)](#)
 [![tests](https://img.shields.io/badge/tests-521%20passing-4ADE80)](#verifikasi)
-[![version](https://img.shields.io/badge/release-v2.5.0-7B61FF)](#apk-siap-pasang)
+[![version](https://img.shields.io/badge/release-v2.5.1-7B61FF)](#apk-siap-pasang)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#lisensi)
 
 </div>
@@ -179,9 +179,14 @@ dan menimpanya berarti merusak artwork. Perilaku ini disengaja — lihat
 
 | Berkas | ABI | Ukuran | SHA-256 |
 |---|---|---|---|
-| `nyra-2.5.0-arm64-v8a.apk` | arm64-v8a | 53.511.724 B | `ebfe685ccca38c84c154f171673fc0722f8d12cf66cb0698f8b43c32e515a208` |
+| `nyra-2.5.1-arm64-v8a.apk` | arm64-v8a | 53.511.724 B | `4b5591381509c28a9de45cd7c9d0f20e0cca7e1140a90cd33ffbd41198b67218` |
+| `nyra-2.5.1-armeabi-v7a.apk` | armeabi-v7a | 48.100.492 B | `9bd09f125812493ee917b8f16c62e8e8a48385f5e2ada05e2f314350aef13d71` |
+| `nyra-2.5.1-x86_64.apk` | x86_64 | 56.262.526 B | `51dfcfb5a1704f8b2ec3bf1263665f8852cf4f221dc2b97fef90b8d850c9f9fc` |
 
-> APK berukuran 53 MB dan **tidak disimpan di dalam repo** (`apk/` masuk
+Pilih **arm64-v8a** untuk hampir semua ponsel Android sejak 2016; armeabi-v7a
+hanya untuk perangkat 32-bit lama, dan x86_64 untuk emulator.
+
+> APK berukuran 48-56 MB dan **tidak disimpan di dalam repo** (`apk/` masuk
 > `.gitignore`) agar riwayat git tetap ringan. Unggah berkasnya sebagai
 > **GitHub Release**, atau bangun sendiri dengan `./gradlew assembleRelease`.
 
@@ -192,14 +197,14 @@ CN=NYRA, OU=AI Comic Translation, O=NYRA, L=Karawang, ST=West Java, C=ID
 SHA-256: bd59a5e08b3eaa201e730d06eceaaf01d5d21baf6f354ae7e7b78f2384784f87
 ```
 
-`minSdk 24` (Android 7.0), `targetSdk 34`, versionCode 19. Kode diperkecil dan
+`minSdk 24` (Android 7.0), `targetSdk 34`, versionCode 20. Kode diperkecil dan
 diaburkan R8 (`isMinifyEnabled = true`).
 
 Verifikasi sebelum memasang:
 
 ```bash
-sha256sum apk/nyra-2.5.0-arm64-v8a.apk
-apksigner verify --print-certs apk/nyra-2.5.0-arm64-v8a.apk
+sha256sum apk/nyra-2.5.1-arm64-v8a.apk
+apksigner verify --print-certs apk/nyra-2.5.1-arm64-v8a.apk
 ```
 
 ---
