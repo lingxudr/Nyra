@@ -311,6 +311,133 @@ object Typography {
     }
 
     /**
+     * Memecah kata menjadi baris yang PANJANGNYA SEIMBANG.
+     *
+     * Kenapa ini ada. Pembungkusan rakus (isi baris sampai penuh, sisanya
+     * turun) menghasilkan bentuk yang menjadi penanda kerja amatir:
+     *
+     *     SEBENARNYA AKU SUDAH TAHU        <- penuh
+     *     ITU                              <- satu kata menggantung
+     *
+     * Penata huruf profesional menyeimbangkan panjang baris supaya bloknya
+     * membentuk sosok yang enak dipandang di dalam balon:
+     *
+     *     SEBENARNYA AKU
+     *     SUDAH TAHU ITU
+     *
+     * Cara kerjanya. Untuk setiap jumlah baris yang mungkin (1..n), kata
+     * dibagi dengan pemrograman dinamis yang meminimalkan JUMLAH KUADRAT
+     * kekurangan tiap baris terhadap baris terpanjang. Mengkuadratkan
+     * membuat satu baris yang sangat pendek jauh lebih mahal daripada
+     * beberapa baris yang agak pendek - itulah yang mendorong hasilnya
+     * menjadi rata. Kemudian dipilih jumlah baris paling sedikit yang masih
+     * muat di [lebarMaks], sebab menambah baris berarti mengecilkan font.
+     *
+     * [lebarKata] memberi lebar tiap kata dan [lebarSpasi] lebar satu spasi,
+     * keduanya diukur pemanggil dengan Paint sungguhan. Fungsi ini sendiri
+     * tidak menyentuh Android sama sekali sehingga bisa diuji di JVM.
+     *
+     * Mengembalikan daftar indeks awal tiap baris. Daftar kosong berarti
+     * tidak ada susunan yang muat - pemanggil harus memakai cara rakus.
+     */
+    fun pecahSeimbang(
+        lebarKata: FloatArray,
+        lebarSpasi: Float,
+        lebarMaks: Float,
+        maksBaris: Int = 12
+    ): List<Int> {
+        val n = lebarKata.size
+        if (n == 0) return emptyList()
+        // Satu kata pun tidak muat: pemanggil perlu pemenggalan, bukan ini.
+        for (w in lebarKata) if (w > lebarMaks) return emptyList()
+
+        // Lebar kumulatif supaya lebar sembarang rentang bisa dihitung O(1).
+        val kum = FloatArray(n + 1)
+        for (i in 0 until n) kum[i + 1] = kum[i] + lebarKata[i]
+        fun lebarRentang(a: Int, b: Int): Float =
+            kum[b] - kum[a] + lebarSpasi * (b - a - 1)
+
+        val batas = min(maksBaris, n)
+        for (baris in 1..batas) {
+            val susunan = bagiRata(n, baris, lebarMaks, ::lebarRentang)
+            if (susunan != null) return susunan
+        }
+        return emptyList()
+    }
+
+    /**
+     * Membagi [n] kata menjadi tepat [baris] baris seimbang, atau null bila
+     * tidak ada pembagian yang setiap barisnya muat di [lebarMaks].
+     *
+     * biaya[i][k] = biaya terbaik menyusun kata i.. menjadi k baris.
+     */
+    private fun bagiRata(
+        n: Int,
+        baris: Int,
+        lebarMaks: Float,
+        lebarRentang: (Int, Int) -> Float
+    ): List<Int>? {
+        val tan = Float.MAX_VALUE
+        // biaya[k][i]: kata i..n-1 dibagi k baris.
+        val biaya = Array(baris + 1) { FloatArray(n + 1) { tan } }
+        val potong = Array(baris + 1) { IntArray(n + 1) { -1 } }
+        biaya[0][n] = 0f
+
+        for (k in 1..baris) {
+            for (i in n - 1 downTo 0) {
+                var terbaik = tan
+                var terbaikJ = -1
+                // Baris ini memuat kata i sampai j-1.
+                for (j in i + 1..n) {
+                    val lebar = lebarRentang(i, j)
+                    if (lebar > lebarMaks) break   // makin panjang makin lebar
+                    val sisa = biaya[k - 1][j]
+                    if (sisa >= tan) continue
+                    // Kekurangan terhadap lebar penuh, dikuadratkan.
+                    val kurang = lebarMaks - lebar
+                    val total = sisa + kurang * kurang
+                    if (total < terbaik) { terbaik = total; terbaikJ = j }
+                }
+                biaya[k][i] = terbaik
+                potong[k][i] = terbaikJ
+            }
+        }
+        if (biaya[baris][0] >= tan) return null
+
+        val hasil = ArrayList<Int>(baris)
+        var i = 0
+        var k = baris
+        while (k > 0) {
+            hasil.add(i)
+            val j = potong[k][i]
+            if (j < 0) return null
+            i = j
+            k--
+        }
+        return hasil
+    }
+
+    /**
+     * Jarak antar huruf, sebagai pecahan dari ukuran font.
+     *
+     * Penata huruf melonggarkan jarak pada teks pendek supaya balon tidak
+     * tampak melompong, dan merapatkannya pada teks panjang supaya muat.
+     * Nilainya sengaja kecil: di atas sekitar 0,08 em huruf mulai tampak
+     * tercerai-berai pada font komik.
+     */
+    fun jarakHuruf(panjangTeks: Int, berat: Berat): Float {
+        val dasar = when {
+            panjangTeks <= 12 -> 0.045f
+            panjangTeks <= 40 -> 0.020f
+            panjangTeks <= 90 -> 0f
+            else -> -0.010f
+        }
+        // Huruf tebal sudah memakan ruang; jangan tambah lagi.
+        val sesuai = if (berat == Berat.TEBAL) dasar - 0.010f else dasar
+        return sesuai.coerceIn(-0.015f, 0.060f)
+    }
+
+    /**
      * Lebar goresan garis luar untuk ukuran font dan berat tertentu.
      *
      * Huruf tebal memerlukan garis luar lebih tebal supaya tetap terpisah

@@ -953,7 +953,7 @@ class Pipeline(
                 for ((numStr, text) in part.translations) {
                     val bIdx = numStr.toIntOrNull() ?: continue
                     val box = part.boxes.getOrNull(bIdx - 1) ?: continue
-                    if (drawText(canvas, bmp, box, text, lang, part.warna, part.gaya)) drawn++
+                    if (drawText(canvas, bmp, box, text, lang, part.warna, part.gaya, part.lepas)) drawn++
                     else if (!teksKosong(text)) tidakTergambar++
                 }
                 rendered.add(bmp)
@@ -1757,7 +1757,8 @@ class Pipeline(
     private fun drawText(
         canvas: Canvas, bmp: Bitmap, box: IntArray, text0: String, lang: String,
         warnaHalaman: Map<String, Palette.Colors> = emptyMap(),
-        gayaHalaman: Map<String, Typography.Gaya> = emptyMap()
+        gayaHalaman: Map<String, Typography.Gaya> = emptyMap(),
+        lepas: Set<String> = emptySet()
     ): Boolean {
         val text = text0.trim()
         if (text.isEmpty() || text.uppercase() == "SKIP") return false
@@ -1792,7 +1793,12 @@ class Pipeline(
             // Sama seperti warna: tanpa entri, Gaya.BAWAAN = perilaku lama.
             gaya = if (cfg.tipografiAdaptif) {
                 gayaHalaman[kunciKotak(box)] ?: Typography.Gaya.BAWAAN
-            } else Typography.Gaya.BAWAAN
+            } else Typography.Gaya.BAWAAN,
+            // Bayangan HANYA untuk teks di luar balon. Di dalam balon latarnya
+            // sudah rata sehingga bayangan tidak menambah keterbacaan dan
+            // justru menjadi penanda hasil amatir; di atas artwork ia yang
+            // memisahkan huruf dari gambar di baliknya.
+            bayangan = cfg.tipografiAdaptif && kunciKotak(box) in lepas
         )
         return true
     }

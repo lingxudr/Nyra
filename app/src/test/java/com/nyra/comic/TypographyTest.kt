@@ -378,4 +378,132 @@ class TypographyTest {
             )
         }
     }
+
+    // ---- pecahSeimbang -------------------------------------------------
+
+    /** Menyusun ulang kata menjadi baris memakai indeks yang dikembalikan. */
+    private fun rakit(kata: List<String>, awal: List<Int>): List<String> {
+        val out = ArrayList<String>()
+        for ((i, m) in awal.withIndex()) {
+            val a = if (i + 1 < awal.size) awal[i + 1] else kata.size
+            out.add(kata.subList(m, a).joinToString(" "))
+        }
+        return out
+    }
+
+    /** Lebar palsu yang mudah dihitung: 10 satuan per huruf. */
+    private fun lebar(kata: List<String>) = FloatArray(kata.size) { kata[it].length * 10f }
+
+    @Test
+    fun `baris dipecah seimbang bukan rakus`() {
+        // Rakus akan menghasilkan "SEBENARNYA AKU" + "SUDAH" + "TAHU" pada
+        // lebar 150; yang seimbang membagi rata.
+        val kata = listOf("SEBENARNYA", "AKU", "SUDAH", "TAHU")
+        val awal = Typography.pecahSeimbang(lebar(kata), 10f, 150f)
+        val baris = rakit(kata, awal)
+        assertTrue("harus terpecah", baris.size >= 2)
+        val panjang = baris.map { it.length }
+        val selisih = panjang.max() - panjang.min()
+        assertTrue("baris timpang: $baris", selisih <= 4)
+    }
+
+    @Test
+    fun `tidak pernah menyisakan satu kata menggantung`() {
+        // Kasus klasik: teks yang pas-pasan melebihi satu baris.
+        val kata = listOf("AKU", "TIDAK", "PERNAH", "BILANG", "BEGITU", "PADAMU")
+        val awal = Typography.pecahSeimbang(lebar(kata), 10f, 260f)
+        val baris = rakit(kata, awal)
+        assertTrue(baris.size >= 2)
+        val terakhir = baris.last().split(" ").size
+        assertTrue("baris terakhir menggantung: $baris", terakhir > 1 || baris.size == 1)
+    }
+
+    @Test
+    fun `setiap baris muat dalam lebar maksimum`() {
+        val kata = listOf("SATU", "DUA", "TIGA", "EMPAT", "LIMA", "ENAM", "TUJUH")
+        val w = lebar(kata)
+        for (maks in 70..400 step 10) {
+            val awal = Typography.pecahSeimbang(w, 10f, maks.toFloat())
+            if (awal.isEmpty()) continue
+            val baris = rakit(kata, awal)
+            for (b in baris) {
+                val lb = b.length * 10f
+                assertTrue("baris '$b' = $lb > $maks", lb <= maks + 1e-3f)
+            }
+        }
+    }
+
+    @Test
+    fun `memakai jumlah baris paling sedikit yang muat`() {
+        // Empat kata 3 huruf: pada lebar 300 semuanya muat dalam satu baris
+        // (4*30 + 3*10 = 150), jadi jangan dipecah walau "lebih seimbang".
+        val kata = listOf("AKU", "KAU", "DIA", "KITA")
+        val awal = Typography.pecahSeimbang(lebar(kata), 10f, 300f)
+        assertEquals("harus satu baris", 1, awal.size)
+    }
+
+    @Test
+    fun `kata yang lebih lebar daripada balon ditolak`() {
+        // Pemanggil harus jatuh ke cara rakus + pemenggalan, bukan menerima
+        // baris yang luber diam-diam.
+        val kata = listOf("PANJANGSEKALI", "YA")
+        val awal = Typography.pecahSeimbang(lebar(kata), 10f, 50f)
+        assertTrue("harus kosong", awal.isEmpty())
+    }
+
+    @Test
+    fun `daftar kosong aman`() {
+        assertTrue(Typography.pecahSeimbang(FloatArray(0), 10f, 100f).isEmpty())
+    }
+
+    @Test
+    fun `indeks awal selalu menaik dan mulai dari nol`() {
+        val kata = listOf("A", "BB", "CCC", "DDDD", "EEEEE", "FF", "GGG")
+        val w = lebar(kata)
+        for (maks in 60..300 step 7) {
+            val awal = Typography.pecahSeimbang(w, 10f, maks.toFloat())
+            if (awal.isEmpty()) continue
+            assertEquals("harus mulai 0", 0, awal[0])
+            for (i in 1 until awal.size) {
+                assertTrue("tidak menaik: $awal", awal[i] > awal[i - 1])
+            }
+            assertTrue("indeks di luar batas: $awal", awal.last() < kata.size)
+        }
+    }
+
+    @Test
+    fun `satu kata menghasilkan satu baris`() {
+        val awal = Typography.pecahSeimbang(floatArrayOf(40f), 10f, 100f)
+        assertEquals(listOf(0), awal)
+    }
+
+    // ---- jarakHuruf ----------------------------------------------------
+
+    @Test
+    fun `teks pendek diberi jarak huruf lebih longgar daripada teks panjang`() {
+        val pendek = Typography.jarakHuruf(8, Typography.Berat.NORMAL)
+        val sedang = Typography.jarakHuruf(30, Typography.Berat.NORMAL)
+        val panjang = Typography.jarakHuruf(200, Typography.Berat.NORMAL)
+        assertTrue("$pendek > $sedang", pendek > sedang)
+        assertTrue("$sedang > $panjang", sedang >= panjang)
+    }
+
+    @Test
+    fun `huruf tebal tidak diberi jarak tambahan`() {
+        for (n in intArrayOf(5, 20, 60, 150)) {
+            val tebal = Typography.jarakHuruf(n, Typography.Berat.TEBAL)
+            val normal = Typography.jarakHuruf(n, Typography.Berat.NORMAL)
+            assertTrue("n=$n tebal $tebal harus <= normal $normal", tebal <= normal)
+        }
+    }
+
+    @Test
+    fun `jarak huruf selalu dalam batas aman`() {
+        for (n in 0..400) {
+            for (b in Typography.Berat.values()) {
+                val j = Typography.jarakHuruf(n, b)
+                assertTrue("n=$n b=$b -> $j", j >= -0.015f && j <= 0.060f)
+            }
+        }
+    }
 }

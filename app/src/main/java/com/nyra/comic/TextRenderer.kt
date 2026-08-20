@@ -6,6 +6,7 @@ import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import java.io.File
@@ -148,7 +149,7 @@ class TextRenderer(ctx: Context) {
     }
 
     private fun makePaint(
-        tf: Typeface, size: Float, tebal: Boolean = false
+        tf: Typeface, size: Float, tebal: Boolean = false, jarakHuruf: Float = 0f
     ): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = tf
         textSize = size
@@ -158,6 +159,11 @@ class TextRenderer(ctx: Context) {
         // sebelum pengukuran supaya lebar yang dihitung memang lebar yang
         // digambar - kalau tidak, teks tebal akan luber keluar balon.
         isFakeBoldText = tebal
+        // Sama alasannya: letterSpacing harus dipasang SEBELUM measureText,
+        // sebab Paint memasukkannya ke dalam lebar yang dilaporkan. Memasang
+        // setelah pengukuran akan membuat setiap baris lebih lebar daripada
+        // yang dihitung, dan teks luber keluar balon.
+        letterSpacing = jarakHuruf
     }
 
     /** pecah_kata_hyphen_jika_panjang */
@@ -183,6 +189,15 @@ class TextRenderer(ctx: Context) {
         val words = ArrayList<String>()
         for (w in rawWords) words.addAll(splitHyphen(w, paint, maxW))
 
+        // Pembungkusan seimbang lebih dulu: hasilnya blok yang panjang
+        // barisnya merata, bukan satu baris penuh dengan sisa menggantung.
+        // Kalau tidak ada susunan yang muat (misalnya satu kata lebih lebar
+        // daripada balon walau sudah dipenggal), jatuh ke cara rakus di bawah
+        // supaya tetap ada keluaran - pencarian biner yang akan mengecilkan
+        // fontnya sampai muat.
+        val seimbang = wrapSeimbang(words, paint, maxW, cjkMode)
+        if (seimbang != null) return seimbang
+
         val lines = ArrayList<String>()
         var current = ""
         for (w in words) {
@@ -202,7 +217,75 @@ class TextRenderer(ctx: Context) {
         return if (lines.isEmpty()) listOf("") else lines
     }
 
+    /**
+     * Menyusun baris seimbang lewat [Typography.pecahSeimbang].
+     *
+     * Mengembalikan null bila tidak ada susunan yang muat; pemanggil lalu
+     * memakai pembungkusan rakus.
+     */
+    private fun wrapSeimbang(
+        words: List<String>, paint: Paint, maxW: Float, cjkMode: Boolean
+    ): List<String>? {
+        if (words.isEmpty()) return null
+        val lebarKata = FloatArray(words.size) { paint.measureText(words[it]) }
+        // Pada CJK tidak ada spasi antar aksara.
+        val lebarSpasi = if (cjkMode) 0f else paint.measureText(" ")
+        val awal = Typography.pecahSeimbang(lebarKata, lebarSpasi, maxW)
+        if (awal.isEmpty()) return null
+
+        val pemisah = if (cjkMode) "" else " "
+        val hasil = ArrayList<String>(awal.size)
+        for ((i, mulai) in awal.withIndex()) {
+            val akhir = if (i + 1 < awal.size) awal[i + 1] else words.size
+            hasil.add(words.subList(mulai, akhir).joinToString(pemisah))
+        }
+        return hasil
+    }
+
     private data class Block(val width: Float, val height: Float, val lineHeight: Float)
+
+    /**
+     * Menghitung startY supaya tinta yang terlihat berada tepat di tengah
+     * kotak secara tegak.
+     *
+     * Dengan startY apa adanya, tinta membentang dari (startY + tinta_atas)
+     * sampai (startY + tinta_bawah), dengan kedua nilai diukur dari puncak
+     * baris pertama. Yang diinginkan adalah titik tengah tinta jatuh di
+     * tengah kotak, jadi startY digeser sebesar selisihnya.
+     *
+     * Hasilnya dijepit ke [y1, y1 + boxH - block.height] supaya penyesuaian
+     * ini tidak pernah bisa mendorong teks keluar kotak - kalau blok memang
+     * lebih tinggi dari kotak (kasus langka teks sangat panjang), perilaku
+     * lama yang dipakai.
+     */
+    private fun startYTinta(
+        lines: List<String>, paint: Paint, spacing: Float,
+        block: Block, y1: Int, boxH: Int
+    ): Float {
+        val bawaan = y1 + (boxH - block.height) / 2f
+        if (lines.isEmpty()) return bawaan
+
+        val fm = paint.fontMetrics
+        val kotak = Rect()
+        var atas = Float.MAX_VALUE
+        var bawah = -Float.MAX_VALUE
+        // Puncak baris ke-i relatif startY; garis dasarnya berjarak -ascent.
+        for ((i, baris) in lines.withIndex()) {
+            if (baris.isBlank()) continue
+            paint.getTextBounds(baris, 0, baris.length, kotak)
+            val garisDasar = i * (block.lineHeight + spacing) - fm.ascent
+            // kotak.top negatif di atas garis dasar, kotak.bottom positif di bawah.
+            atas = min(atas, garisDasar + kotak.top)
+            bawah = max(bawah, garisDasar + kotak.bottom)
+        }
+        if (atas > bawah) return bawaan
+
+        val tinggiTinta = bawah - atas
+        val geser = (boxH - tinggiTinta) / 2f - atas
+        val batasBawah = y1 + (boxH - block.height)
+        if (batasBawah < y1) return bawaan
+        return (y1 + geser).coerceIn(y1.toFloat(), batasBawah)
+    }
 
     private fun measureBlock(lines: List<String>, paint: Paint, spacing: Float): Block {
         val fm = paint.fontMetrics
@@ -224,7 +307,8 @@ class TextRenderer(ctx: Context) {
         maskMarginRatio: Float,
         colors: Palette.Colors = Palette.DEFAULT,
         ikutiKontur: Boolean = false,
-        gaya: Typography.Gaya = Typography.Gaya.BAWAAN
+        gaya: Typography.Gaya = Typography.Gaya.BAWAAN,
+        bayangan: Boolean = false
     ) {
         var text = text0.trim()
         if (text.isEmpty()) return
@@ -274,8 +358,13 @@ class TextRenderer(ctx: Context) {
         // sama persis (kecocokan bersifat monotonik) dengan ~7 pengukuran
         // alih-alih sampai 89 per balon.
         val tebal = gaya.terukur && gaya.berat == Typography.Berat.TEBAL
+        // Jarak antar huruf ikut diukur di dalam pencarian, bukan ditambahkan
+        // sesudahnya, supaya ukuran yang ditemukan benar-benar muat.
+        val jarak = if (gaya.terukur) {
+            Typography.jarakHuruf(text.length, gaya.berat)
+        } else 0f
         val bestFontSize = Typography.cariUkuran(setting.minFont, setting.maxFont) { size ->
-            val paint = makePaint(tf, size.toFloat(), tebal)
+            val paint = makePaint(tf, size.toFloat(), tebal, jarak)
             val spacing = max(1f, size * setting.spacingRatio)
             val lines = wrapText(text, paint, maxW)
             val block = measureBlock(lines, paint, spacing)
@@ -283,13 +372,22 @@ class TextRenderer(ctx: Context) {
         }
 
         val finalSize = max(setting.minFont, (bestFontSize * setting.fontScale).toInt())
-        val paint = makePaint(tf, finalSize.toFloat(), tebal)
+        val paint = makePaint(tf, finalSize.toFloat(), tebal, jarak)
         val spacing = max(1f, finalSize * setting.spacingRatio)
         val lines = wrapText(text, paint, maxW)
         val block = measureBlock(lines, paint, spacing)
 
         val centerX = x1 + boxW / 2f
-        val startY = y1 + (boxH - block.height) / 2f
+        // Penengahan tegak memakai batas tinta, bukan metrik huruf.
+        //
+        // Metrik font menyediakan ruang di atas untuk aksen (A dengan topi)
+        // dan di bawah untuk ekor huruf (g, y). Teks komik hampir selalu
+        // HURUF BESAR tanpa keduanya, jadi menengahkan memakai ascent/descent
+        // menyisakan ruang kosong yang tidak seimbang - pada Komika 60px
+        // ruang atas 29px lawan bawah 13px, teks tampak melorot ~8px.
+        // Pelettering profesional menengahkan siluet huruf yang benar-benar
+        // terlihat, dan itu yang dilakukan di sini.
+        val startY = startYTinta(lines, paint, spacing, block, y1, boxH)
 
         // Garis luar mengikuti berat huruf asli: huruf tebal perlu garis lebih
         // tegas, huruf tipis perlu yang lebih halus supaya tidak tertelan.
@@ -309,7 +407,7 @@ class TextRenderer(ctx: Context) {
             )
         }
 
-        val strokePaint = makePaint(tf, finalSize.toFloat(), tebal).apply {
+        val strokePaint = makePaint(tf, finalSize.toFloat(), tebal, jarak).apply {
             style = Paint.Style.STROKE
             strokeWidth = strokeW * 2f
             strokeJoin = Paint.Join.ROUND
@@ -317,8 +415,17 @@ class TextRenderer(ctx: Context) {
             // warna latar seperti sebelumnya.
             color = colors.garisLuar ?: colors.background
             textAlign = Paint.Align.CENTER
+            // Bayangan dipasang pada goresan luar, bukan pada isi: goresan
+            // adalah bentuk terluar huruf, jadi bayangannya melingkupi seluruh
+            // siluet. Kalau dipasang pada isi, bayangan jatuh DI BAWAH garis
+            // luar dan nyaris tak terlihat.
+            if (bayangan) {
+                val radius = max(1.5f, finalSize / 8f)
+                val geser = max(1f, finalSize / 14f)
+                setShadowLayer(radius, geser, geser, colors.foreground)
+            }
         }
-        val fillPaint = makePaint(tf, finalSize.toFloat(), tebal).apply {
+        val fillPaint = makePaint(tf, finalSize.toFloat(), tebal, jarak).apply {
             style = Paint.Style.FILL
             color = colors.foreground
             textAlign = Paint.Align.CENTER
