@@ -177,14 +177,24 @@ dan menimpanya berarti merusak artwork. Perilaku ini disengaja — lihat
 
 ## APK siap pasang
 
-| Berkas | ABI | Ukuran | SHA-256 |
-|---|---|---|---|
-| `nyra-2.5.1-arm64-v8a.apk` | arm64-v8a | 53.511.724 B | `4b5591381509c28a9de45cd7c9d0f20e0cca7e1140a90cd33ffbd41198b67218` |
-| `nyra-2.5.1-armeabi-v7a.apk` | armeabi-v7a | 48.100.492 B | `9bd09f125812493ee917b8f16c62e8e8a48385f5e2ada05e2f314350aef13d71` |
-| `nyra-2.5.1-x86_64.apk` | x86_64 | 56.262.526 B | `51dfcfb5a1704f8b2ec3bf1263665f8852cf4f221dc2b97fef90b8d850c9f9fc` |
+| Berkas | ABI | Ukuran |
+|---|---|---|
+| `nyra-2.5.1-arm64-v8a.apk` | arm64-v8a | 53.511.724 B |
+| `nyra-2.5.1-armeabi-v7a.apk` | armeabi-v7a | 48.100.492 B |
+| `nyra-2.5.1-x86_64.apk` | x86_64 | 56.262.526 B |
 
 Pilih **arm64-v8a** untuk hampir semua ponsel Android sejak 2016; armeabi-v7a
 hanya untuk perangkat 32-bit lama, dan x86_64 untuk emulator.
+
+SHA-256 sengaja **tidak** dicantumkan di sini. Blok tanda tangan APK memuat
+stempel waktu, sehingga dua build dari commit yang sama persis menghasilkan
+ringkasan yang berbeda meski ukuran, sertifikat, dan isinya identik —
+angka yang ditulis di README akan menyesatkan begitu APK dibangun ulang.
+Ringkasan yang mengikat adalah yang tertera pada **GitHub Release** untuk
+tag terkait; verifikasi berkas unduhan Anda terhadap angka di halaman itu.
+
+Yang tetap dan bisa diperiksa kapan pun adalah **sertifikat penerbitnya**
+(lihat di bawah): APK NYRA yang sah selalu ditandatangani kunci yang sama.
 
 > APK berukuran 48-56 MB dan **tidak disimpan di dalam repo** (`apk/` masuk
 > `.gitignore`) agar riwayat git tetap ringan. Unggah berkasnya sebagai
@@ -203,8 +213,11 @@ diaburkan R8 (`isMinifyEnabled = true`).
 Verifikasi sebelum memasang:
 
 ```bash
-sha256sum apk/nyra-2.5.1-arm64-v8a.apk
-apksigner verify --print-certs apk/nyra-2.5.1-arm64-v8a.apk
+# Cocokkan dengan ringkasan yang tertera di halaman GitHub Release:
+sha256sum nyra-2.5.1-arm64-v8a.apk
+
+# Pemeriksaan yang paling menentukan - sertifikat harus persis seperti di atas:
+apksigner verify --print-certs nyra-2.5.1-arm64-v8a.apk
 ```
 
 ---
