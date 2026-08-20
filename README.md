@@ -14,7 +14,7 @@ warna, dan bentuk aslinya.
 [![platform](https://img.shields.io/badge/platform-Android%207.0%2B-3DDC84)](#)
 [![language](https://img.shields.io/badge/Kotlin-100%25-7F52FF)](#)
 [![tests](https://img.shields.io/badge/tests-521%20passing-4ADE80)](#verifikasi)
-[![version](https://img.shields.io/badge/release-v2.5.1-7B61FF)](#apk-siap-pasang)
+[![version](https://img.shields.io/badge/release-v2.6.0-7B61FF)](#apk-siap-pasang)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#lisensi)
 
 </div>
@@ -179,9 +179,9 @@ dan menimpanya berarti merusak artwork. Perilaku ini disengaja — lihat
 
 | Berkas | ABI | Ukuran |
 |---|---|---|
-| `nyra-2.5.1-arm64-v8a.apk` | arm64-v8a | 53.511.724 B |
-| `nyra-2.5.1-armeabi-v7a.apk` | armeabi-v7a | 48.100.492 B |
-| `nyra-2.5.1-x86_64.apk` | x86_64 | 56.262.526 B |
+| `nyra-2.6.0-arm64-v8a.apk` | arm64-v8a | 53.511.728 B |
+| `nyra-2.6.0-armeabi-v7a.apk` | armeabi-v7a | 48.100.496 B |
+| `nyra-2.6.0-x86_64.apk` | x86_64 | 56.262.530 B |
 
 Pilih **arm64-v8a** untuk hampir semua ponsel Android sejak 2016; armeabi-v7a
 hanya untuk perangkat 32-bit lama, dan x86_64 untuk emulator.
@@ -207,17 +207,17 @@ CN=NYRA, OU=AI Comic Translation, O=NYRA, L=Karawang, ST=West Java, C=ID
 SHA-256: bd59a5e08b3eaa201e730d06eceaaf01d5d21baf6f354ae7e7b78f2384784f87
 ```
 
-`minSdk 24` (Android 7.0), `targetSdk 34`, versionCode 20. Kode diperkecil dan
+`minSdk 24` (Android 7.0), `targetSdk 34`, versionCode 21. Kode diperkecil dan
 diaburkan R8 (`isMinifyEnabled = true`).
 
 Verifikasi sebelum memasang:
 
 ```bash
 # Cocokkan dengan ringkasan yang tertera di halaman GitHub Release:
-sha256sum nyra-2.5.1-arm64-v8a.apk
+sha256sum nyra-2.6.0-arm64-v8a.apk
 
 # Pemeriksaan yang paling menentukan - sertifikat harus persis seperti di atas:
-apksigner verify --print-certs nyra-2.5.1-arm64-v8a.apk
+apksigner verify --print-certs nyra-2.6.0-arm64-v8a.apk
 ```
 
 ---
@@ -477,6 +477,7 @@ Ringkas, dari yang terbaru. Rinciannya tersimpan di riwayat commit.
 
 | Versi | Isi |
 |---|---|
+| **v2.6.0** | Detektor OCR kini jadi lapisan kedua di jalur RT-DETR, sehingga teks tanpa balon (mis. Jepang tegak di latar polos) tidak lagi lolos tanpa terjemahan. Penengahan tegak dihitung dari siluet tinta, bukan metrik font: kemiringan 11/11/16/7 px turun jadi 0/0/1/0 px. |
 | **v2.5.1** | Kotak yang penata teks pasti tolak tidak lagi dikirim ke provider (hemat token), dan terjemahan yang gagal tergambar kini dilaporkan, bukan hilang diam-diam. |
 | **v2.5.0** | Tipografi adaptif: ukuran, spasi, tebal, dan orientasi diukur dari teks aslinya. Terjemahan paralel per gelombang. |
 | **v2.3.1** | Erangan tokoh tidak lagi di-`SKIP` (studi kasus di atas). |
