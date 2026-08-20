@@ -694,6 +694,7 @@ class Pipeline(
         val partDir = File(workDir, "parts").apply { mkdirs() }
         val units = ArrayList<PageUnit>()
         val pending = ArrayList<PendingCrop>()
+        var ditolakBentuk = 0
 
         // ---- Pass 1: detect bubbles, dump crops to disk ----
         for ((pIdx, file) in pages.withIndex()) {
@@ -757,6 +758,15 @@ class Pipeline(
                 )
 
                 for ((bIdx0, box) in boxes.withIndex()) {
+                    // Kotak yang PASTI ditolak saat menggambar tidak usah
+                    // dikirim. Dulu bentuk seperti ini tetap dipotong, ikut
+                    // masuk mosaik, dan dibayar sebagai token - lalu drawText
+                    // membuangnya tanpa satu baris log pun. Pada berkas oracle
+                    // 12,7% kotak (61 dari 480) berada di golongan ini.
+                    if (bentukDitolak(box, bmp.width, bmp.height)) {
+                        ditolakBentuk++
+                        continue
+                    }
                     val crop = buildCrop(bmp, box, boxes) ?: continue
                     val cropFile = File(cropDir, "c%04d_%02d_%03d.png".format(pIdx, partIdx, bIdx0))
                     Storage.savePng(crop, cropFile)
@@ -771,6 +781,11 @@ class Pipeline(
         }
 
         log("[Multi-Page Batch] Extracted ${pending.size} speech bubbles across $total pages.")
+        if (ditolakBentuk > 0) {
+            log("  [i] $ditolakBentuk kotak dilewati sebelum dikirim: bentuknya terlalu " +
+                "memanjang/lebar untuk balon (kemungkinan panel atau SFX), dan penata teks " +
+                "memang akan menolaknya. Tidak ada token yang terpakai untuk kotak ini.")
+        }
 
         // ---- Pass 2: mosaic + translate ----
         //
@@ -896,6 +911,7 @@ class Pipeline(
         // complete, readable chapter.
         val outDir = File(workDir, "out").apply { mkdirs() }
         val outputs = arrayOfNulls<File>(total)
+        var tidakTergambar = 0
         if (cancelled) log("[Stopped] Saving the ${units.count { u -> u.parts.any { it.translations.isNotEmpty() } }} page(s) already translated...")
 
         for ((pIdx, unit) in units.withIndex()) {
@@ -938,6 +954,7 @@ class Pipeline(
                     val bIdx = numStr.toIntOrNull() ?: continue
                     val box = part.boxes.getOrNull(bIdx - 1) ?: continue
                     if (drawText(canvas, bmp, box, text, lang, part.warna, part.gaya)) drawn++
+                    else if (!teksKosong(text)) tidakTergambar++
                 }
                 rendered.add(bmp)
             }
@@ -980,6 +997,16 @@ class Pipeline(
                 "$missed balon dibiarkan dalam bahasa asli" +
                 (if (cancelled) " karena proses dihentikan." else " karena provider tidak menjawab.") +
                 " Halaman tetap tersimpan — jalankan ulang untuk melengkapi sisanya.")
+        }
+        // Terjemahan yang SUDAH dibayar tapi tidak muncul di gambar. Ini beda
+        // dari 'missed' di atas: modelnya menjawab, tekannya ada, tapi penata
+        // teks menolak kotaknya. Dulu selisih ini tidak pernah dilaporkan,
+        // jadi pengguna melihat "20 balon diterjemahkan" pada halaman yang
+        // jelas-jelas masih berbahasa Jepang dan tidak punya cara tahu kenapa.
+        if (tidakTergambar > 0) {
+            log("  [!] $tidakTergambar terjemahan tidak tergambar karena bentuk kotaknya " +
+                "ditolak penata teks. Terjemahannya tersimpan di proyek dan bisa " +
+                "ditempatkan manual lewat editor.")
         }
         return outputs.toList()
     }
@@ -1530,6 +1557,12 @@ class Pipeline(
      * teks apa pun. Menghapus sesuatu hanya boleh kalau kita memang berniat
      * menggambar penggantinya.
      */
+    /** Teks yang memang TIDAK dimaksudkan tergambar: kosong atau 'SKIP'. */
+    private fun teksKosong(teks: String): Boolean {
+        val t = teks.trim()
+        return t.isEmpty() || t.uppercase() == "SKIP"
+    }
+
     private fun bentukDitolak(box: IntArray, imgW: Int, imgH: Int): Boolean {
         val w = max(1, box[2] - box[0])
         val h = max(1, box[3] - box[1])

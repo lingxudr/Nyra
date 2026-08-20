@@ -13,8 +13,8 @@ warna, dan bentuk aslinya.
 
 [![platform](https://img.shields.io/badge/platform-Android%207.0%2B-3DDC84)](#)
 [![language](https://img.shields.io/badge/Kotlin-100%25-7F52FF)](#)
-[![tests](https://img.shields.io/badge/tests-457%20passing-4ADE80)](#verifikasi)
-[![version](https://img.shields.io/badge/release-v2.3.1-7B61FF)](#apk-siap-pasang)
+[![tests](https://img.shields.io/badge/tests-521%20passing-4ADE80)](#verifikasi)
+[![version](https://img.shields.io/badge/release-v2.5.0-7B61FF)](#apk-siap-pasang)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#lisensi)
 
 </div>
@@ -59,14 +59,14 @@ jaringan adalah panggilan terjemahan ke LLM pilihan Anda.
 | minSdk / targetSdk | 24 (Android 7.0) / 34 |
 | ABI rilis | arm64-v8a (armeabi-v7a & x86_64 bisa dibangun sendiri) |
 | Bahasa sasaran | ID, EN, JP, ZH, ES, PT, JV, KO, RU, TH |
-| Tes | 457 tes / 50 kelas, semua hijau |
+| Tes | 521 tes / 56 kelas, semua hijau |
 
 ---
 
 ## Hasil terjemahan sungguhan
 
 Bukan tangkapan layar promosi. Di bawah ini satu halaman utuh
-**SPY × FAMILY Mission 139** yang diproses apa adanya oleh NYRA v2.3.x,
+**SPY × FAMILY Mission 139** yang diproses apa adanya oleh NYRA v2.5.x,
 Jepang → Indonesia, tanpa koreksi manual.
 
 Sepuluh balon terdeteksi, sepuluh diterjemahkan:
@@ -179,7 +179,7 @@ dan menimpanya berarti merusak artwork. Perilaku ini disengaja — lihat
 
 | Berkas | ABI | Ukuran | SHA-256 |
 |---|---|---|---|
-| `nyra-2.3.1-arm64-v8a.apk` | arm64-v8a | 53.494.116 B | `a4fd9b7a473c879c765aa6e00e02e5e0f06f464737785b7eb04542fff29f1aad` |
+| `nyra-2.5.0-arm64-v8a.apk` | arm64-v8a | 53.511.724 B | `ebfe685ccca38c84c154f171673fc0722f8d12cf66cb0698f8b43c32e515a208` |
 
 > APK berukuran 53 MB dan **tidak disimpan di dalam repo** (`apk/` masuk
 > `.gitignore`) agar riwayat git tetap ringan. Unggah berkasnya sebagai
@@ -192,14 +192,14 @@ CN=NYRA, OU=AI Comic Translation, O=NYRA, L=Karawang, ST=West Java, C=ID
 SHA-256: bd59a5e08b3eaa201e730d06eceaaf01d5d21baf6f354ae7e7b78f2384784f87
 ```
 
-`minSdk 24` (Android 7.0), `targetSdk 34`, versionCode 17. Kode diperkecil dan
+`minSdk 24` (Android 7.0), `targetSdk 34`, versionCode 19. Kode diperkecil dan
 diaburkan R8 (`isMinifyEnabled = true`).
 
 Verifikasi sebelum memasang:
 
 ```bash
-sha256sum apk/nyra-2.3.1-arm64-v8a.apk
-apksigner verify --print-certs apk/nyra-2.3.1-arm64-v8a.apk
+sha256sum apk/nyra-2.5.0-arm64-v8a.apk
+apksigner verify --print-certs apk/nyra-2.5.0-arm64-v8a.apk
 ```
 
 ---
@@ -391,7 +391,7 @@ rilis jatuh ke debug-signing secara otomatis.
 ./gradlew testReleaseUnitTest
 ```
 
-**457 tes / 50 kelas / 0 gagal.**
+**521 tes / 56 kelas / 0 gagal.**
 
 Tes di sini sengaja diperlakukan sebagai bukti, bukan formalitas. Aturan yang
 dipegang:
@@ -459,6 +459,8 @@ Ringkas, dari yang terbaru. Rinciannya tersimpan di riwayat commit.
 
 | Versi | Isi |
 |---|---|
+| **v2.5.1** | Kotak yang penata teks pasti tolak tidak lagi dikirim ke provider (hemat token), dan terjemahan yang gagal tergambar kini dilaporkan, bukan hilang diam-diam. |
+| **v2.5.0** | Tipografi adaptif: ukuran, spasi, tebal, dan orientasi diukur dari teks aslinya. Terjemahan paralel per gelombang. |
 | **v2.3.1** | Erangan tokoh tidak lagi di-`SKIP` (studi kasus di atas). |
 | **v2.3.0** | Manajemen model: status, verifikasi SHA-256 atas permintaan, ruang terpakai. |
 | **v2.2.0** | Perpustakaan + pembaca. Sebelumnya hanya bab terbaru yang bisa dibuka, bab lama tak terjangkau dan diam-diam terhapus. |
@@ -505,6 +507,30 @@ Beberapa jebakan yang sudah dibayar mahal dan tidak perlu diulang:
 - Terjemahan bergantung pada kualitas model yang Anda pilih. Model kecil murah
   cenderung memotong kalimat panjang.
 - Hanya arm64-v8a yang dirilis; ABI lain harus dibangun sendiri.
+
+### Balon yang tetap tidak diterjemahkan
+
+Sebagian kotak memang **sengaja** tidak digambari teks, dan itu bukan
+kegagalan. Penata teks menolak kotak yang bentuknya mustahil untuk sebuah
+balon — rasio lebar:tinggi ≥ 3,2 sambil selebar ≥ 35 % halaman, atau luasnya
+≥ 3,5 % halaman dengan rasio ≥ 2,8. Bentuk begitu hampir selalu panel utuh,
+bilah judul, atau SFX yang membentang; menimpanya akan merusak artwork.
+
+Sejak v2.5.1 saringan itu dijalankan **sebelum** potongan dikirim, bukan
+sesudah. Dulu kotak semacam ini tetap ikut dibayar sebagai token lalu hasilnya
+dibuang tanpa jejak di log. Pada berkas oracle repo ini 61 dari 480 kotak
+(12,7 %) masuk golongan tersebut.
+
+Yang tampil di log sekarang:
+
+| Baris | Artinya |
+|---|---|
+| `N kotak dilewati sebelum dikirim` | Bentuknya ditolak; tidak ada token terpakai. |
+| `N terjemahan tidak tergambar` | Model menjawab tapi kotaknya ditolak. Terjemahannya tersimpan di proyek dan bisa ditempatkan manual lewat editor. |
+| `N balon dibiarkan dalam bahasa asli` | Provider tidak menjawab atau proses dihentikan. Jalankan ulang untuk melengkapi. |
+
+Ketiganya berbeda sebab, jadi ditulis terpisah. Kalau sebuah balon hilang
+tanpa salah satu baris di atas, itu bug — laporkan beserta halamannya.
 
 ---
 
