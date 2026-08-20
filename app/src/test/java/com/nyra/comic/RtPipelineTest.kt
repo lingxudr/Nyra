@@ -140,8 +140,11 @@ class RtPipelineTest {
         val cfg = konfigurasi()
         val p = pipa(cfg)
         p.rtDetectorOverride = { deteksi }
-        // Kalau jalur RT-DETR benar-benar dipakai, detektor teks lama tidak
-        // boleh dipanggil sama sekali.
+        // Detektor OCR kini jalan sebagai lapisan kedua di jalur RT-DETR juga
+        // (RT-DETR bisa melewatkan teks tanpa balon). Di sini dia sengaja
+        // tidak menemukan apa pun, jadi hasilnya harus persis sama dengan
+        // keluaran RT-DETR saja - lapisan kedua tidak boleh menambah kotak
+        // palsu atau menggeser hitungan.
         var ocrDipanggil = 0
         p.textDetectorOverride = { ocrDipanggil++; emptyList() }
         p.providerOverride = provider()
@@ -155,7 +158,7 @@ class RtPipelineTest {
 
         assertEquals("tidak boleh ada halaman gagal", 0, r.failed)
         assertTrue("harus ada keluaran", r.outputs.isNotEmpty())
-        assertEquals("OCR PP-OCRv5 tidak boleh dipakai lagi", 0, ocrDipanggil)
+        assertEquals("OCR dipakai sebagai lapisan kedua", 1, ocrDipanggil)
         // 2 balon + 1 teks lepas
         assertEquals(3, jumlahTergambar())
         assertTrue(

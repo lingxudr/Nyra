@@ -1325,30 +1325,7 @@ class Pipeline(
         if (cfg.filterSfxAktif) boxes = BoxUtils.dropSfxAndArt(bmp, boxes, cfg.sfxMode)
 
         // Tahap kedua: teks yang tidak berada di dalam balon mana pun.
-        // eyecypy.onnx hanya dilatih mencari balon, jadi narasi kotak, teks
-        // latar dan papan nama tidak pernah terlihat olehnya. Wilayah teks
-        // hanya DITAMBAHKAN; kotak balon tidak pernah diubah atau dibuang,
-        // sehingga paritas dengan cypy Python tetap terjaga saat sakelar mati.
-        if (cfg.ocrTeksLepas && !cancelled) {
-            val mentah = textDetectorOverride?.invoke(bmp)
-                ?: ocr()?.let { runCatching { it.detect(bmp) }.getOrElse { emptyList() } }
-                ?: emptyList()
-            if (mentah.isNotEmpty()) {
-                // Baris teks mentah dari detektor OCR juga menjadi bahan bukti
-                // arah baca: yang diperlukan hanya bentuk blok, dan blok yang
-                // JATUH DI DALAM balon justru sampel terbaiknya.
-                blokTeksKotak.addAll(BoxUtils.sanitize(mentah, bmp.width, bmp.height))
-                val tambahan = TextRegionMath.refine(mentah, boxes, bmp.width, bmp.height)
-                val bersih = if (cfg.filterSfxAktif) {
-                    BoxUtils.dropSfxAndArt(bmp, tambahan, cfg.sfxMode)
-                } else tambahan
-                if (bersih.isNotEmpty()) {
-                    log("  [+] ${bersih.size} teks di luar balon ikut diterjemahkan.")
-                    for (b in bersih) teksLepasKotak.add(kunciKotak(b))
-                    boxes = boxes + bersih
-                }
-            }
-        }
+        boxes = tambahTeksLepasOcr(bmp, boxes)
 
         // Urutan baca menentukan penomoran ID merah, jadi ia menentukan urutan
         // percakapan yang dibaca model.
@@ -1400,6 +1377,42 @@ class Pipeline(
      *    balon palsu, RT-DETR memberi 0).
      *  - Warna tiap balon diukur di sini dan disimpan untuk tahap render.
      */
+    /**
+     * Lapisan kedua deteksi: detektor teks OCR (PP-OCRv5 det) mencari tulisan
+     * yang tidak berada di dalam balon mana pun. Wilayah teks hanya
+     * DITAMBAHKAN; kotak balon tidak pernah diubah atau dibuang, sehingga
+     * paritas dengan cypy Python tetap terjaga saat sakelar mati.
+     *
+     * Dipakai OLEH KEDUA jalur deteksi. Sebelumnya hanya jalur YOLO lama yang
+     * memanggilnya, sementara jalur RT-DETR (bawaan) hanya mengandalkan kelas
+     * text_free miliknya sendiri. Akibatnya nyata dan terukur: pada halaman
+     * uji 020.png RT-DETR menemukan 6 balon tetapi NOL kotak yang menyentuh
+     * `つまんねー!!` tegak di x=1180..1325 y=577..872, sedangkan detektor OCR
+     * menemukannya (kolom 1183,614..1213,825). Teks itu lolos tanpa
+     * diterjemahkan. Lihat DeteksiTeksLepasRtdetrTest.
+     */
+    private fun tambahTeksLepasOcr(bmp: Bitmap, boxes: List<IntArray>): List<IntArray> {
+        if (!cfg.ocrTeksLepas || cancelled) return boxes
+        val mentah = textDetectorOverride?.invoke(bmp)
+            ?: ocr()?.let { runCatching { it.detect(bmp) }.getOrElse { emptyList() } }
+            ?: emptyList()
+        if (mentah.isEmpty()) return boxes
+
+        // Baris teks mentah dari detektor OCR juga menjadi bahan bukti arah
+        // baca: yang diperlukan hanya bentuk blok, dan blok yang JATUH DI
+        // DALAM balon justru sampel terbaiknya.
+        blokTeksKotak.addAll(BoxUtils.sanitize(mentah, bmp.width, bmp.height))
+        val tambahan = TextRegionMath.refine(mentah, boxes, bmp.width, bmp.height)
+        val bersih = if (cfg.filterSfxAktif) {
+            BoxUtils.dropSfxAndArt(bmp, tambahan, cfg.sfxMode)
+        } else tambahan
+        if (bersih.isEmpty()) return boxes
+
+        log("  [+] ${bersih.size} teks di luar balon ikut diterjemahkan.")
+        for (b in bersih) teksLepasKotak.add(kunciKotak(b))
+        return boxes + bersih
+    }
+
     private fun detectViaRtdetr(bmp: Bitmap): List<IntArray>? {
         val dets = rtDetectorOverride?.invoke(bmp)
             ?: rt()?.let { d -> runCatching { d.detect(bmp) }.getOrElse { null } }
@@ -1464,9 +1477,19 @@ class Pipeline(
             }
         }
 
+        // Jaring pengaman: RT-DETR punya kelas text_free sendiri, tetapi dia
+        // bisa melewatkan tulisan tanpa balon sama sekali - terutama teks
+        // Jepang tegak yang ramping di atas latar putih. Detektor OCR jalan
+        // sesudahnya dan hanya MENAMBAH apa yang belum tertutup kotak mana pun
+        // (`hasil` dipakai sebagai daftar penutup, jadi tidak ada duplikat).
+        val sebelumOcr = hasil.size
+        hasil = tambahTeksLepasOcr(bmp, hasil)
+        val dariOcr = hasil.size - sebelumOcr
+
         val jumlahGelap = warnaKotak.count { Palette.isDark(it.value.background) }
         log("  [i] RT-DETR: ${balon.size} balon, ${textIn.size} teks-dalam, " +
             "${textFree.size} teks-luar" +
+            (if (dariOcr > 0) ", +$dariOcr dari OCR" else "") +
             (if (jumlahGelap > 0) ", $jumlahGelap balon gelap dipertahankan" else ""))
 
         return BoxUtils.urutBaca(hasil, arahBaca(bmp.width, bmp.height, balon))
