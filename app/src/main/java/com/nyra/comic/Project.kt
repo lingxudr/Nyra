@@ -172,6 +172,10 @@ class Project(
             j.put("goresan", g.tebalGoresan.toDouble())
             j.put("berat", g.berat.name)
             j.put("terukur", g.terukur)
+            // Hanya ditulis bila menyimpang dari bawaan, supaya berkas proyek
+            // lama tetap terbaca sama persis dan tidak membengkak.
+            if (g.dikunci) j.put("dikunci", true)
+            if (g.spasiPaksa > 0f) j.put("spasiPaksa", g.spasiPaksa.toDouble())
             return j
         }
 
@@ -183,7 +187,9 @@ class Project(
             tebalGoresan = j.optDouble("goresan", 0.0).toFloat(),
             berat = runCatching { Typography.Berat.valueOf(j.optString("berat")) }
                 .getOrDefault(Typography.Berat.NORMAL),
-            terukur = j.optBoolean("terukur", false)
+            terukur = j.optBoolean("terukur", false),
+            dikunci = j.optBoolean("dikunci", false),
+            spasiPaksa = j.optDouble("spasiPaksa", 0.0).toFloat()
         )
 
         fun colorsFromJson(j: JSONObject): Palette.Colors {

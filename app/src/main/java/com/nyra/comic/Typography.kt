@@ -100,7 +100,24 @@ object Typography {
         val kepadatan: Float,
         val tebalGoresan: Float,
         val berat: Berat,
-        val terukur: Boolean
+        val terukur: Boolean,
+        /**
+         * Disetel tangan oleh pengguna lewat editor.
+         *
+         * Pengukuran otomatis bisa salah - teks asli yang tertimpa efek, balon
+         * yang isinya cuma satu tanda seru, screentone yang terbaca sebagai
+         * goresan tebal. Bila pengguna sudah membetulkannya, keputusan itu
+         * tidak boleh ditimpa lagi oleh pengukuran ulang.
+         */
+        val dikunci: Boolean = false,
+        /**
+         * Jarak baris paksaan; 0 berarti ikut hasil pengukuran.
+         *
+         * Nilai terpisah, bukan menumpang [kepadatan], supaya mengubah jarak
+         * baris tidak diam-diam ikut mengubah hal lain yang juga dihitung dari
+         * kepadatan.
+         */
+        val spasiPaksa: Float = 0f
     ) {
         companion object {
             val BAWAAN = Gaya(
@@ -280,7 +297,12 @@ object Typography {
         panjangTeks: Int,
         bahasaTegak: Boolean
     ): Rencana {
+        // Pilihan tangan menang atas pengukuran. Diperiksa lebih dulu daripada
+        // [Gaya.terukur], sebab balon yang gagal diukur justru yang paling
+        // sering perlu dibetulkan pengguna - kalau dicek belakangan, gaya
+        // manual pada balon tak terukur akan diam-diam diabaikan.
         val spasi = when {
+            gaya.spasiPaksa > 0f -> gaya.spasiPaksa
             !gaya.terukur -> SPASI_NORMAL
             // Balon yang aslinya padat memerlukan baris rapat supaya jumlah
             // baris terjemahan tetap masuk.
@@ -294,11 +316,11 @@ object Typography {
         // sampai tak terbaca demi menampung jarak antar baris.
         val spasiAkhir = if (panjangTeks > 120) min(spasi, SPASI_RAPAT) else spasi
 
-        val skala = if (gaya.terukur) gaya.rasioIsi else ISI_BAWAAN
+        val skala = if (gaya.terukur || gaya.dikunci) gaya.rasioIsi else ISI_BAWAAN
 
         return Rencana(
             ukuranFont = ukuranMuat.coerceIn(FONT_MIN, FONT_MAKS),
-            berat = if (gaya.terukur) gaya.berat else Berat.NORMAL,
+            berat = if (gaya.terukur || gaya.dikunci) gaya.berat else Berat.NORMAL,
             spasiBaris = spasiAkhir,
             skalaLebar = skala,
             skalaTinggi = skala,

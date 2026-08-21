@@ -307,6 +307,8 @@ tanpa teks apa pun di atasnya. Teks kosong dan `SKIP` juga ditolak keduanya.
 | **Perpustakaan** | Semua bab tersimpan, dengan indikator kelengkapan terjemahan. |
 | **Pembaca** | Baca hasil langsung di aplikasi, overlay penuh layar. |
 | **Editor kotak** | Geser, ubah ukuran, tambah, hapus kotak; sunting teks per balon. Render selalu dari halaman bersih, jadi menyunting sepuluh kali sama hasilnya dengan sekali. |
+| **Gaya huruf manual** | Ketebalan, besar teks, dan jarak baris per balon bisa ditimpa saat tipografi otomatis salah menebak. Pilihan disimpan dan tidak ditimpa pengukuran ulang. |
+| **Hapus watermark** | Cari otomatis kandidat (berulang antar halaman / di tepi) atau gambar kotaknya sendiri; ditambal LaMa bila terpasang, kalau tidak dengan penambal salin-cermin lokal. Non-destruktif: kotaknya disimpan, urung = hapus kotak. |
 | **Manajemen model** | Status tiap model (belum ada / separuh / terpasang / terverifikasi / rusak), verifikasi SHA-256 atas permintaan, hitung ruang terpakai. |
 | **Resume** | Arsip yang terhenti dilanjutkan dari halaman terakhir, diukur dari permintaan yang benar-benar sampai ke server. |
 | **Ekspor CBZ** | Hasil dibungkus jadi satu berkas. |

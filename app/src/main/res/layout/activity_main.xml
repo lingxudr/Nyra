@@ -2,6 +2,7 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg">
@@ -71,7 +72,7 @@
                     android:paddingEnd="10dp"
                     android:paddingTop="5dp"
                     android:paddingBottom="5dp"
-                    android:text="v2.0.0"
+                    tools:text="v2.6.0"
                     android:textColor="@color/accent"
                     android:textSize="11sp"
                     android:textStyle="bold" />

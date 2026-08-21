@@ -87,6 +87,12 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         setContentView(b.root)
         cfg = Config.get(this)
 
+        // Label versi dulu ditulis tetap di layout dan tertinggal di "v2.0.0"
+        // selama enam rilis. Dibaca dari paket supaya tidak bisa basi lagi.
+        b.tvVersion.text = runCatching {
+            "v" + packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrDefault("")
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             askNotif.launch(Manifest.permission.POST_NOTIFICATIONS)
         }

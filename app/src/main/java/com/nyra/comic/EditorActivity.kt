@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.widget.EditText
+import android.widget.RadioGroup
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -14,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.nyra.comic.databinding.ActivityEditorBinding
 import java.io.File
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 /**
  * Mode koreksi manual.
@@ -439,17 +442,35 @@ class EditorActivity : AppCompatActivity() {
             tvSrc.visibility = android.view.View.VISIBLE
         }
 
+        val gayaAwal = page.styles[kunci] ?: Typography.Gaya.BAWAAN
+        val kontrolGaya = ikatKontrolGaya(v, gayaAwal)
+
         AlertDialog.Builder(this)
             .setView(v)
             .setPositiveButton(R.string.editor_save) { _, _ ->
                 val teks = et.text.toString().trim()
                 val sebelum = page.translations[kunci]
-                if (teks == (sebelum ?: "")) return@setPositiveButton
+                val gayaSebelum = page.styles[kunci]
+                val gayaBaru = kontrolGaya()
+
+                val teksBerubah = teks != (sebelum ?: "")
+                val gayaBerubah = gayaBaru != gayaSebelum
+                if (!teksBerubah && !gayaBerubah) return@setPositiveButton
+
                 if (teks.isEmpty()) page.translations.remove(kunci)
                 else page.translations[kunci] = teks
+                if (gayaBaru == null) page.styles.remove(kunci)
+                else page.styles[kunci] = gayaBaru
+
+                // Satu langkah urung memulihkan teks DAN gaya sekaligus:
+                // keduanya diubah oleh satu ketukan Simpan, jadi memisahnya
+                // akan membuat pengguna harus menekan urung dua kali untuk
+                // membatalkan satu tindakan.
                 catatUrung {
                     if (sebelum == null) page.translations.remove(kunci)
                     else page.translations[kunci] = sebelum
+                    if (gayaSebelum == null) page.styles.remove(kunci)
+                    else page.styles[kunci] = gayaSebelum
                     runCatching { p.save(this) }
                 }
                 // Simpan segera: kalau aplikasi ditutup setelah menyunting,
@@ -460,6 +481,104 @@ class EditorActivity : AppCompatActivity() {
             .setNegativeButton(R.string.editor_cancel, null)
             .show()
     }
+
+    /**
+     * Menyiapkan kontrol gaya pada dialog dan mengembalikan pembaca hasilnya.
+     *
+     * Fungsi yang dikembalikan menghasilkan null bila pengguna membiarkan
+     * semuanya "Auto" - null berarti hapus entri gaya, sehingga balon kembali
+     * mengikuti pengukuran otomatis alih-alih membeku pada nilai bawaan.
+     */
+    private fun ikatKontrolGaya(
+        v: android.view.View,
+        awal: Typography.Gaya
+    ): () -> Typography.Gaya? {
+        val tvAuto = v.findViewById<TextView>(R.id.tvGayaAuto)
+        val rgBerat = v.findViewById<RadioGroup>(R.id.rgBerat)
+        val rgSpasi = v.findViewById<RadioGroup>(R.id.rgSpasi)
+        val sbIsi = v.findViewById<SeekBar>(R.id.sbIsi)
+        val tvIsi = v.findViewById<TextView>(R.id.tvIsiLabel)
+
+        tvAuto.text = when {
+            awal.dikunci -> getString(R.string.editor_style_manual)
+            awal.terukur -> getString(
+                R.string.editor_style_auto_measured,
+                namaBerat(awal.berat),
+                (awal.rasioIsi * 100).roundToInt()
+            )
+            else -> getString(R.string.editor_style_auto_none)
+        }
+
+        // Slider melangkah 1% dari ISI_MIN sampai ISI_MAKS; di luar rentang itu
+        // teks dijamin meluber atau tenggelam, jadi tidak ada gunanya ditawarkan.
+        val isiMin = (Typography.ISI_MIN * 100).roundToInt()
+        val isiMaks = (Typography.ISI_MAKS * 100).roundToInt()
+        sbIsi.max = isiMaks - isiMin
+        val isiAwal = if (awal.dikunci || awal.terukur) awal.rasioIsi else Typography.ISI_BAWAAN
+        sbIsi.progress = ((isiAwal * 100).roundToInt() - isiMin).coerceIn(0, sbIsi.max)
+        fun labelIsi(p: Int) {
+            tvIsi.text = getString(R.string.editor_style_fill, p + isiMin)
+        }
+        labelIsi(sbIsi.progress)
+        sbIsi.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) = labelIsi(p)
+            override fun onStartTrackingTouch(s: SeekBar?) = Unit
+            override fun onStopTrackingTouch(s: SeekBar?) = Unit
+        })
+
+        rgBerat.check(
+            if (!awal.dikunci) R.id.rbBeratAuto else when (awal.berat) {
+                Typography.Berat.TIPIS -> R.id.rbBeratTipis
+                Typography.Berat.TEBAL -> R.id.rbBeratTebal
+                else -> R.id.rbBeratNormal
+            }
+        )
+        rgSpasi.check(
+            when (awal.spasiPaksa) {
+                Typography.SPASI_RAPAT -> R.id.rbSpasiRapat
+                Typography.SPASI_NORMAL -> R.id.rbSpasiNormal
+                Typography.SPASI_LONGGAR -> R.id.rbSpasiLonggar
+                else -> R.id.rbSpasiAuto
+            }
+        )
+
+        return fun(): Typography.Gaya? {
+            val beratPilihan = when (rgBerat.checkedRadioButtonId) {
+                R.id.rbBeratTipis -> Typography.Berat.TIPIS
+                R.id.rbBeratNormal -> Typography.Berat.NORMAL
+                R.id.rbBeratTebal -> Typography.Berat.TEBAL
+                else -> null
+            }
+            val spasiPilihan = when (rgSpasi.checkedRadioButtonId) {
+                R.id.rbSpasiRapat -> Typography.SPASI_RAPAT
+                R.id.rbSpasiNormal -> Typography.SPASI_NORMAL
+                R.id.rbSpasiLonggar -> Typography.SPASI_LONGGAR
+                else -> 0f
+            }
+            val isi = (sbIsi.progress + isiMin) / 100f
+            val isiBerubah = kotlin.math.abs(isi - isiAwal) > 0.005f
+
+            // Semua Auto dan slider tak disentuh: kembalikan gaya asli apa
+            // adanya (termasuk null) supaya pengukuran otomatis tetap berlaku.
+            if (beratPilihan == null && spasiPilihan == 0f && !isiBerubah) {
+                return if (awal.dikunci) awal.copy(dikunci = false) else awal.takeIf { it.terukur }
+            }
+            return awal.copy(
+                berat = beratPilihan ?: awal.berat,
+                rasioIsi = isi,
+                spasiPaksa = spasiPilihan,
+                dikunci = true
+            )
+        }
+    }
+
+    private fun namaBerat(b: Typography.Berat): String = getString(
+        when (b) {
+            Typography.Berat.TIPIS -> R.string.editor_style_thin
+            Typography.Berat.TEBAL -> R.string.editor_style_bold
+            else -> R.string.editor_style_normal
+        }
+    )
 
     /**
      * Tulis SEMUA halaman yang sudah diperbaiki ke folder keluaran.

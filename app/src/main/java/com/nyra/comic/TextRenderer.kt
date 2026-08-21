@@ -118,7 +118,9 @@ class TextRenderer(ctx: Context) {
         boxW: Int, boxH: Int, text: String, gaya: Typography.Gaya
     ): Setting {
         val dasar = chooseSetting(boxW, boxH, text)
-        if (!gaya.terukur) return dasar
+        // Gaya terkunci berasal dari pilihan pengguna dan harus dipakai
+        // walau balonnya sendiri gagal diukur otomatis.
+        if (!gaya.terukur && !gaya.dikunci) return dasar
         val rencana = Typography.putuskan(
             gaya = gaya,
             ukuranMuat = dasar.maxFont,
@@ -357,10 +359,10 @@ class TextRenderer(ctx: Context) {
         // Pencarian biner, bukan perulangan menurun: hasilnya ukuran yang
         // sama persis (kecocokan bersifat monotonik) dengan ~7 pengukuran
         // alih-alih sampai 89 per balon.
-        val tebal = gaya.terukur && gaya.berat == Typography.Berat.TEBAL
+        val tebal = (gaya.terukur || gaya.dikunci) && gaya.berat == Typography.Berat.TEBAL
         // Jarak antar huruf ikut diukur di dalam pencarian, bukan ditambahkan
         // sesudahnya, supaya ukuran yang ditemukan benar-benar muat.
-        val jarak = if (gaya.terukur) {
+        val jarak = if (gaya.terukur || gaya.dikunci) {
             Typography.jarakHuruf(text.length, gaya.berat)
         } else 0f
         val bestFontSize = Typography.cariUkuran(setting.minFont, setting.maxFont) { size ->
@@ -391,7 +393,7 @@ class TextRenderer(ctx: Context) {
 
         // Garis luar mengikuti berat huruf asli: huruf tebal perlu garis lebih
         // tegas, huruf tipis perlu yang lebih halus supaya tidak tertelan.
-        val strokeW = if (gaya.terukur) {
+        val strokeW = if (gaya.terukur || gaya.dikunci) {
             Typography.lebarGarisLuar(finalSize, gaya.berat)
         } else max(1f, finalSize / 11f)
 

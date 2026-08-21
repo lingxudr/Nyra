@@ -1,44 +1,189 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  ScrollView: dengan kontrol gaya, isi dialog bisa melebihi tinggi layar
+  ponsel kecil dalam mode lanskap dan tombol Simpan akan terdorong keluar.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:background="@color/bg_elev"
-    android:padding="20dp">
+    android:background="@color/bg_elev">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/editor_dialog_title"
-        android:textColor="@color/text_primary"
-        android:textSize="16sp"
-        android:textStyle="bold" />
+    <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
 
-    <TextView
-        android:id="@+id/tvSource"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/console_bg"
-        android:padding="10dp"
-        android:textColor="@color/text_muted"
-        android:textSize="12sp"
-        android:visibility="gone" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/editor_dialog_title"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-    <EditText
-        android:id="@+id/etText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:background="@drawable/dropzone_bg"
-        android:gravity="top|start"
-        android:inputType="textMultiLine|textCapSentences"
-        android:minLines="3"
-        android:maxLines="8"
-        android:padding="12dp"
-        android:textColor="@color/text_primary"
-        android:textColorHint="@color/text_muted"
-        android:hint="@string/editor_dialog_hint"
-        android:textSize="14sp"
-        android:importantForAutofill="no" />
-</LinearLayout>
+        <TextView
+            android:id="@+id/tvSource"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/console_bg"
+            android:padding="10dp"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <EditText
+            android:id="@+id/etText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/dropzone_bg"
+            android:gravity="top|start"
+            android:inputType="textMultiLine|textCapSentences"
+            android:minLines="3"
+            android:maxLines="8"
+            android:padding="12dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:hint="@string/editor_dialog_hint"
+            android:textSize="14sp"
+            android:importantForAutofill="no" />
+
+        <TextView
+            android:id="@+id/tvGayaHead"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/editor_style_head"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvGayaAuto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="@color/text_muted"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/editor_style_weight"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp" />
+
+        <RadioGroup
+            android:id="@+id/rgBerat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/rbBeratAuto"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_auto"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbBeratTipis"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_thin"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbBeratNormal"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_normal"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbBeratTebal"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_bold"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/tvIsiLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp" />
+
+        <SeekBar
+            android:id="@+id/sbIsi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="37"
+            android:progress="23" />
+
+        <TextView
+            android:id="@+id/tvSpasiLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/editor_style_spacing"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp" />
+
+        <RadioGroup
+            android:id="@+id/rgSpasi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/rbSpasiAuto"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_auto"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbSpasiRapat"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_tight"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbSpasiNormal"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_normal"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/rbSpasiLonggar"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/editor_style_loose"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+        </RadioGroup>
+    </LinearLayout>
+</ScrollView>
