@@ -13,7 +13,7 @@ warna, dan bentuk aslinya.
 
 [![platform](https://img.shields.io/badge/platform-Android%207.0%2B-3DDC84)](#)
 [![language](https://img.shields.io/badge/Kotlin-100%25-7F52FF)](#)
-[![tests](https://img.shields.io/badge/tests-521%20passing-4ADE80)](#verifikasi)
+[![tests](https://img.shields.io/badge/tests-577%20passing-4ADE80)](#verifikasi)
 [![version](https://img.shields.io/badge/release-v2.7.0-7B61FF)](#apk-siap-pasang)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#lisensi)
 
@@ -59,7 +59,7 @@ jaringan adalah panggilan terjemahan ke LLM pilihan Anda.
 | minSdk / targetSdk | 24 (Android 7.0) / 34 |
 | ABI rilis | arm64-v8a (armeabi-v7a & x86_64 bisa dibangun sendiri) |
 | Bahasa sasaran | ID, EN, JP, ZH, ES, PT, JV, KO, RU, TH |
-| Tes | 521 tes / 56 kelas, semua hijau |
+| Tes | 577 tes / 63 kelas, semua hijau |
 
 ---
 
@@ -411,7 +411,7 @@ rilis jatuh ke debug-signing secara otomatis.
 ./gradlew testReleaseUnitTest
 ```
 
-**521 tes / 56 kelas / 0 gagal.**
+**577 tes / 63 kelas / 0 gagal.**
 
 Tes di sini sengaja diperlakukan sebagai bukti, bukan formalitas. Aturan yang
 dipegang:
