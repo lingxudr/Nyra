@@ -1752,6 +1752,22 @@ class Pipeline(
         val src = prj.pageFile(ctx, page)
         val bmp = Storage.decodeBitmap(src, cfg.maxImageSide) ?: return null
 
+        // Watermark dihapus lebih dulu, sebelum teks digambar: halaman di
+        // folder proyek disimpan bersih dan digambar ulang tiap kali, jadi
+        // inilah satu-satunya tempat penghapusan itu bisa bertahan.
+        if (page.watermarks.isNotEmpty()) {
+            val skala = bmp.width.toFloat() / page.width.coerceAtLeast(1)
+            val kotak = if (skala > 0.99f && skala < 1.01f) page.watermarks.toList()
+            else page.watermarks.map {
+                intArrayOf(
+                    (it[0] * skala).toInt(), (it[1] * skala).toInt(),
+                    (it[2] * skala).toInt(), (it[3] * skala).toInt()
+                )
+            }
+            runCatching { HapusWatermark.hapus(ctx, bmp, kotak) { m -> log(m) } }
+                .onFailure { log("  [!] Hapus watermark gagal: ${it.message}") }
+        }
+
         if (cfg.inpaintLama) {
             val sasaran = sasaranInpaint(
                 page.boxes, page.translations, page.freeText, bmp.width, bmp.height

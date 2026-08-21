@@ -111,6 +111,48 @@
             app:cornerRadius="10dp" />
     </LinearLayout>
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnWatermark"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="42dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:maxLines="1"
+            android:minWidth="0dp"
+            android:text="@string/editor_wm"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            app:backgroundTint="@color/dark_btn"
+            app:cornerRadius="10dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnUndo"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:enabled="false"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:maxLines="1"
+            android:minWidth="0dp"
+            android:text="@string/editor_undo"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            app:backgroundTint="@color/dark_btn"
+            app:cornerRadius="10dp" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/tvHint"
         android:layout_width="match_parent"
@@ -132,36 +174,63 @@
         android:paddingTop="4dp"
         android:paddingBottom="12dp">
 
+        <!--
+            Tombol navigasi sengaja hanya chevron berukuran tetap.
+            Sebelumnya ketiganya memakai layout_weight dan label penuh, dan di
+            layar 360dp label "< Sebelumnya" tidak muat sehingga membungkus ke
+            baris kedua lalu terpotong oleh tinggi 48dp yang tetap. Lebar tetap
+            + maxLines=1 membuat baris ini tidak bisa rusak lagi, sekaligus
+            memberi seluruh sisa ruang ke aksi utama.
+        -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPrev"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+            android:layout_width="52dp"
             android:layout_height="48dp"
             android:layout_marginEnd="6dp"
-            android:text="@string/editor_prev"
+            android:contentDescription="@string/editor_prev"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:maxLines="1"
+            android:minWidth="0dp"
+            android:paddingStart="0dp"
+            android:paddingEnd="0dp"
+            android:text="@string/editor_prev_short"
             android:textColor="@color/text_primary"
+            android:textSize="18sp"
             app:backgroundTint="@color/dark_btn"
             app:cornerRadius="12dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnNext"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+            android:layout_width="52dp"
             android:layout_height="48dp"
-            android:layout_marginStart="6dp"
             android:layout_marginEnd="6dp"
-            android:text="@string/editor_next"
+            android:contentDescription="@string/editor_next"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:maxLines="1"
+            android:minWidth="0dp"
+            android:paddingStart="0dp"
+            android:paddingEnd="0dp"
+            android:text="@string/editor_next_short"
             android:textColor="@color/text_primary"
+            android:textSize="18sp"
             app:backgroundTint="@color/dark_btn"
             app:cornerRadius="12dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnExport"
             android:layout_width="0dp"
-            android:layout_weight="1.4"
+            android:layout_weight="1"
             android:layout_height="48dp"
-            android:layout_marginStart="6dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:maxLines="1"
+            android:minWidth="0dp"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
             android:text="@string/editor_export"
+            android:textSize="14sp"
             android:textStyle="bold"
             app:backgroundTint="@color/accent"
             app:cornerRadius="12dp" />

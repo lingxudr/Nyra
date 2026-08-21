@@ -84,7 +84,34 @@
     <string name="editor_hint">Ketuk balon untuk mengubah teksnya. Cubit untuk memperbesar.</string>
     <string name="editor_prev">‹ Sebelumnya</string>
     <string name="editor_next">Berikutnya ›</string>
+    <string name="editor_prev_short">‹</string>
+    <string name="editor_next_short">›</string>
     <string name="editor_export">Simpan semua</string>
+
+    <!-- Hapus watermark -->
+    <string name="editor_wm">Hapus watermark</string>
+    <string name="editor_undo">Urungkan</string>
+    <string name="editor_wm_title">Hapus watermark</string>
+    <string name="editor_wm_engine_lama">Mesin: LaMa (kualitas terbaik)</string>
+    <string name="editor_wm_engine_local">Mesin: tambal lokal (tanpa unduhan)</string>
+    <string name="editor_wm_scan">Cari otomatis di halaman ini</string>
+    <string name="editor_wm_draw">Gambar kotak sendiri</string>
+    <string name="editor_wm_scanning">Mencari watermark…</string>
+    <string name="editor_wm_none">Tidak ada watermark yang terdeteksi. Gambar kotaknya sendiri.</string>
+    <string name="editor_wm_found">%d kandidat ditemukan. Pilih yang benar-benar watermark.</string>
+    <string name="editor_wm_pick_title">Pilih kandidat</string>
+    <string name="editor_wm_reason_ulang">berulang di %d halaman</string>
+    <string name="editor_wm_reason_tepi">di tepi halaman</string>
+    <string name="editor_wm_reason_lain">kandidat</string>
+    <string name="editor_wm_item">%1$s · %2$d%%</string>
+    <string name="editor_wm_apply">Hapus terpilih</string>
+    <string name="editor_wm_working">Menghapus…</string>
+    <string name="editor_wm_done">%1$d area dihapus (%2$s).</string>
+    <string name="editor_wm_hint_draw">Gambar kotak di atas watermark, lalu lepaskan.</string>
+    <string name="editor_wm_engine_short_lama">LaMa</string>
+    <string name="editor_wm_engine_short_local">tambal lokal</string>
+    <string name="editor_undo_none">Tidak ada yang bisa diurungkan.</string>
+    <string name="editor_undo_done">Dibatalkan.</string>
     <string name="editor_dialog_title">Ubah teks balon</string>
     <string name="editor_dialog_hint">Kosongkan untuk menghapus teks di balon ini</string>
     <string name="editor_save">Simpan</string>

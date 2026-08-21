@@ -40,8 +40,33 @@ class EditorActivity : AppCompatActivity() {
     /** Kotak terpilih (berbasis 1) di mode sunting kotak; 0 = tidak ada. */
     private var terpilih = 0
 
+    /**
+     * Benar bila seretan berikutnya membuat kotak watermark, bukan kotak teks.
+     *
+     * Dua fitur memakai gerakan seret yang sama, jadi tujuan seretan harus
+     * jelas sebelum jari menyentuh layar - kalau tidak, pengguna yang bermaksud
+     * menghapus watermark malah membuat balon teks kosong.
+     */
+    private var modeWatermark = false
+
+    /**
+     * Tumpukan pembatalan.
+     *
+     * Menghapus watermark itu merusak: piksel aslinya ditimpa dan tidak ada
+     * cara mengembalikannya kalau tebakannya salah. Karena penghapusan selalu
+     * dihitung ulang dari halaman bersih, membatalkan cukup berarti membuang
+     * kotaknya lagi dari daftar - murah, dan membuat fitur ini aman dicoba.
+     */
+    private val urungan = ArrayDeque<() -> Unit>()
+
     companion object {
         const val EXTRA_PROJECT_ID = "project_id"
+
+        /** Batas tumpukan pembatalan, supaya tidak tumbuh tanpa akhir. */
+        const val MAKS_URUNG = 20
+
+        /** Berapa halaman tetangga dipindai untuk mencari pengulangan. */
+        const val TETANGGA_PINDAI = 2
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,7 +125,12 @@ class EditorActivity : AppCompatActivity() {
             }
         }
 
-        b.pageView.onBoxCreated = { kotak -> tambahKotak(kotak) }
+        b.pageView.onBoxCreated = { kotak ->
+            if (modeWatermark) tambahWatermark(kotak) else tambahKotak(kotak)
+        }
+
+        b.btnWatermark.setOnClickListener { dialogWatermark() }
+        b.btnUndo.setOnClickListener { urungkan() }
 
         tampilkan()
     }
@@ -196,6 +226,204 @@ class EditorActivity : AppCompatActivity() {
             .show()
     }
 
+    // ------------------------------------------------------------------
+    // Hapus watermark
+    // ------------------------------------------------------------------
+
+    /**
+     * Menu utama penghapus watermark.
+     *
+     * Mesin yang aktif ditampilkan di judul, bukan disembunyikan: hasil LaMa
+     * dan tambal lokal berbeda kualitas, dan pengguna berhak tahu mana yang
+     * sedang dipakai sebelum menimpa gambarnya.
+     */
+    private fun dialogWatermark() {
+        if (sibuk) return
+        val mesin = HapusWatermark.mesinAktif(this)
+        val judul = getString(
+            if (mesin == HapusWatermark.Mesin.LAMA) R.string.editor_wm_engine_lama
+            else R.string.editor_wm_engine_local
+        )
+
+        val pilihan = arrayOf(
+            getString(R.string.editor_wm_scan),
+            getString(R.string.editor_wm_draw),
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.editor_wm_title)
+            .setMessage(judul)
+            .setItems(pilihan) { _, which ->
+                if (which == 0) pindaiWatermark() else mulaiGambarWatermark()
+            }
+            .setNegativeButton(R.string.editor_cancel, null)
+            .show()
+    }
+
+    /** Nyalakan mode seret khusus watermark. */
+    private fun mulaiGambarWatermark() {
+        modeWatermark = true
+        // Mode kotak wajib hidup supaya PageView menerima seretan sama sekali.
+        b.swEditKotak.isChecked = true
+        b.pageView.modeEdit = true
+        b.pageView.modeTambah = true
+        b.tvHint.setText(R.string.editor_wm_hint_draw)
+    }
+
+    /**
+     * Cari kandidat watermark pada halaman aktif.
+     *
+     * Detektor teks OCR dipakai ulang di sini alih-alih menulis pencari baru:
+     * watermark adalah teks, dan detektor itu sudah terbukti menemukan teks di
+     * luar balon pada ronde sebelumnya. Halaman tetangga ikut dipindai karena
+     * pengulangan posisi adalah bukti terkuat bahwa sesuatu itu watermark dan
+     * bukan dialog.
+     */
+    private fun pindaiWatermark() {
+        val p = prj ?: return
+        val page = p.pages.getOrNull(idx) ?: return
+        if (sibuk) return
+        sibuk = true
+        b.tvHint.setText(R.string.editor_wm_scan)
+        Toast.makeText(this, R.string.editor_wm_scanning, Toast.LENGTH_SHORT).show()
+
+        thread {
+            val kandidat = runCatching { cariKandidat(p, page) }.getOrDefault(emptyList())
+            runOnUiThread {
+                sibuk = false
+                b.tvHint.setText(if (b.swEditKotak.isChecked) R.string.editor_hint_box else R.string.editor_hint)
+                if (kandidat.isEmpty()) {
+                    Toast.makeText(this, R.string.editor_wm_none, Toast.LENGTH_LONG).show()
+                    mulaiGambarWatermark()
+                    return@runOnUiThread
+                }
+                pilihKandidat(kandidat)
+            }
+        }
+    }
+
+    /** Jalankan detektor teks pada halaman aktif dan tetangganya. */
+    private fun cariKandidat(p: Project, page: Project.Page): List<WatermarkMath.Kandidat> {
+        TextRegionDetector(this).use { det ->
+            val bmp = Storage.decodeBitmap(p.pageFile(this, page), cfg.maxImageSide)
+                ?: return emptyList()
+            val regions = det.detect(bmp)
+            val w = bmp.width
+            val h = bmp.height
+            bmp.recycle()
+            if (regions.isEmpty()) return emptyList()
+
+            // Halaman tetangga hanya dipakai untuk bukti pengulangan, dan
+            // dibatasi beberapa halaman saja: memindai seluruh bab bisa
+            // memakan menit-an tanpa menambah keyakinan yang berarti.
+            val lain = ArrayList<List<IntArray>>()
+            for (d in listOf(-2, -1, 1, 2)) {
+                if (lain.size >= TETANGGA_PINDAI) break
+                val hal = p.pages.getOrNull(idx + d) ?: continue
+                val b2 = Storage.decodeBitmap(p.pageFile(this, hal), cfg.maxImageSide) ?: continue
+                // Hanya halaman berukuran sama yang bisa dibandingkan posisinya.
+                if (b2.width == w && b2.height == h) {
+                    lain.add(runCatching { det.detect(b2) }.getOrDefault(emptyList()))
+                }
+                b2.recycle()
+            }
+
+            return WatermarkMath.cari(regions, w, h, lain, page.boxes.toList())
+        }
+    }
+
+    /** Daftar centang kandidat; tidak ada yang dihapus tanpa dipilih. */
+    private fun pilihKandidat(kandidat: List<WatermarkMath.Kandidat>) {
+        val label = kandidat.map { k ->
+            val alasan = when (k.alasan) {
+                "ulang" -> getString(R.string.editor_wm_reason_ulang, k.berulang + 1)
+                "tepi" -> getString(R.string.editor_wm_reason_tepi)
+                else -> getString(R.string.editor_wm_reason_lain)
+            }
+            getString(R.string.editor_wm_item, alasan, (k.skor * 100).toInt())
+        }.toTypedArray()
+
+        // Kandidat terkuat dicentang lebih dulu; sisanya keputusan pengguna.
+        val dicentang = BooleanArray(kandidat.size) { it == 0 }
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.editor_wm_found, kandidat.size))
+            .setMultiChoiceItems(label, dicentang) { _, which, isChecked ->
+                dicentang[which] = isChecked
+            }
+            .setPositiveButton(R.string.editor_wm_apply) { _, _ ->
+                val pilih = kandidat.filterIndexed { i, _ -> dicentang[i] }.map { it.kotak }
+                if (pilih.isNotEmpty()) terapkanWatermark(pilih)
+            }
+            .setNegativeButton(R.string.editor_cancel, null)
+            .show()
+    }
+
+    /** Kotak watermark hasil seretan manual. */
+    private fun tambahWatermark(kotak: IntArray) {
+        modeWatermark = false
+        b.pageView.modeTambah = false
+        b.tvHint.setText(R.string.editor_hint_box)
+        terapkanWatermark(listOf(kotak))
+    }
+
+    /**
+     * Simpan kotak watermark ke proyek lalu gambar ulang.
+     *
+     * Penghapusan sesungguhnya terjadi di [Pipeline.renderProjectPage], bukan
+     * di sini: halaman selalu digambar dari salinan bersih, jadi menyimpan
+     * kotaknya sudah cukup dan hasilnya otomatis ikut ke ekspor.
+     */
+    private fun terapkanWatermark(kotak: List<IntArray>) {
+        val p = prj ?: return
+        val page = p.pages.getOrNull(idx) ?: return
+
+        val mulai = page.watermarks.size
+        page.watermarks.addAll(kotak)
+        runCatching { p.save(this) }
+
+        catatUrung {
+            // Buang persis kotak yang barusan ditambahkan.
+            while (page.watermarks.size > mulai) page.watermarks.removeAt(page.watermarks.size - 1)
+            runCatching { p.save(this) }
+        }
+
+        val mesin = getString(
+            if (HapusWatermark.mesinAktif(this) == HapusWatermark.Mesin.LAMA)
+                R.string.editor_wm_engine_short_lama
+            else R.string.editor_wm_engine_short_local
+        )
+        Toast.makeText(
+            this, getString(R.string.editor_wm_done, kotak.size, mesin), Toast.LENGTH_SHORT
+        ).show()
+        tampilkan()
+    }
+
+    // ------------------------------------------------------------------
+    // Urungkan
+    // ------------------------------------------------------------------
+
+    /** Daftarkan satu langkah yang bisa dibatalkan. */
+    private fun catatUrung(aksi: () -> Unit) {
+        urungan.addLast(aksi)
+        while (urungan.size > MAKS_URUNG) urungan.removeFirst()
+        b.btnUndo.isEnabled = true
+    }
+
+    private fun urungkan() {
+        if (sibuk) return
+        val aksi = urungan.removeLastOrNull()
+        if (aksi == null) {
+            Toast.makeText(this, R.string.editor_undo_none, Toast.LENGTH_SHORT).show()
+            b.btnUndo.isEnabled = false
+            return
+        }
+        aksi()
+        b.btnUndo.isEnabled = urungan.isNotEmpty()
+        Toast.makeText(this, R.string.editor_undo_done, Toast.LENGTH_SHORT).show()
+        tampilkan()
+    }
+
     private fun sunting(nomor: Int) {
         val p = prj ?: return
         val page = p.pages.getOrNull(idx) ?: return
@@ -215,8 +443,15 @@ class EditorActivity : AppCompatActivity() {
             .setView(v)
             .setPositiveButton(R.string.editor_save) { _, _ ->
                 val teks = et.text.toString().trim()
+                val sebelum = page.translations[kunci]
+                if (teks == (sebelum ?: "")) return@setPositiveButton
                 if (teks.isEmpty()) page.translations.remove(kunci)
                 else page.translations[kunci] = teks
+                catatUrung {
+                    if (sebelum == null) page.translations.remove(kunci)
+                    else page.translations[kunci] = sebelum
+                    runCatching { p.save(this) }
+                }
                 // Simpan segera: kalau aplikasi ditutup setelah menyunting,
                 // suntingan tidak boleh ikut hilang.
                 runCatching { p.save(this) }

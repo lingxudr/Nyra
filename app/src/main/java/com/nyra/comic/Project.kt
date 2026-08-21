@@ -65,7 +65,17 @@ class Project(
          */
         val styles: MutableMap<String, Typography.Gaya> = mutableMapOf(),
         /** Kunci kotak yang berasal dari teks di LUAR balon. */
-        val freeText: MutableSet<String> = mutableSetOf()
+        val freeText: MutableSet<String> = mutableSetOf(),
+        /**
+         * Kotak watermark yang dihapus pengguna, koordinat halaman asli.
+         *
+         * Wajib ikut tersimpan, bukan sekadar dihapus di layar: halaman di
+         * folder proyek sengaja disimpan BERSIH dan digambar ulang dari nol
+         * setiap kali editor menampilkannya. Kalau penghapusan hanya hidup di
+         * bitmap layar, watermark akan muncul kembali begitu pengguna pindah
+         * halaman lalu balik lagi — dan juga hilang dari hasil ekspor.
+         */
+        val watermarks: MutableList<IntArray> = mutableListOf()
     ) {
         /** Teks asli hasil OCR/LLM bila ada — ditampilkan sebagai rujukan editor. */
         val sourceText: MutableMap<String, String> = mutableMapOf()
@@ -108,6 +118,11 @@ class Project(
             for ((k, g) in p.styles) so.put(k, gayaToJson(g))
             po.put("styles", so)
             po.put("freeText", JSONArray(p.freeText.toList()))
+            val wa = JSONArray()
+            for (b in p.watermarks) {
+                wa.put(JSONArray().put(b[0]).put(b[1]).put(b[2]).put(b[3]))
+            }
+            po.put("watermarks", wa)
             arr.put(po)
         }
         o.put("pages", arr)
@@ -219,6 +234,16 @@ class Project(
                 po.optJSONObject("styles")?.let { g ->
                     for (k in g.keys()) {
                         runCatching { page.styles[k] = gayaFromJson(g.getJSONObject(k)) }
+                    }
+                }
+                po.optJSONArray("watermarks")?.let { wa ->
+                    for (k in 0 until wa.length()) {
+                        runCatching {
+                            val b = wa.getJSONArray(k)
+                            page.watermarks.add(
+                                intArrayOf(b.getInt(0), b.getInt(1), b.getInt(2), b.getInt(3))
+                            )
+                        }
                     }
                 }
                 po.optJSONArray("freeText")?.let { f ->
