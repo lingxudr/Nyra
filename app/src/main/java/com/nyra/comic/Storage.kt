@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
@@ -126,6 +127,50 @@ object Storage {
     fun savePng(bmp: Bitmap, file: File) {
         file.parentFile?.mkdirs()
         FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /**
+     * Simpan berkas KERJA (potongan, bagian halaman) — bukan keluaran akhir.
+     *
+     * Catatan penting: parameter mutu pada `CompressFormat.PNG` **diabaikan**
+     * karena PNG lossless, jadi "PNG level 1" tidak ada di Android — encoder
+     * selalu memakai upaya penuh. Yang benar-benar bisa mempercepat adalah
+     * ganti format, dan WEBP_LOSSLESS memakai parameter mutu sebagai
+     * "seberapa keras berusaha": 0 = cepat dan agak besar, 100 = lambat dan
+     * kecil.
+     *
+     * Karena berkas ini hanya hidup di dalam cacheDir selama satu proses lalu
+     * dihapus, ukurannya tidak penting — kecepatannya yang penting. Tetap
+     * lossless supaya piksel yang dibaca tahap berikutnya identik: deteksi,
+     * OCR, dan pengukuran tipografi semuanya membaca ulang berkas ini, jadi
+     * artefak lossy akan merusak hasil, bukan sekadar tampilan.
+     */
+    fun saveKerja(bmp: Bitmap, file: File) {
+        file.parentFile?.mkdirs()
+        FileOutputStream(file).use { out ->
+            // Arti angka "mutu" berbeda antar format, dan salah pilih di sini
+            // berarti berkas kerja jadi lossy tanpa ketahuan:
+            //  - WEBP_LOSSLESS (API >= 30): angka = usaha kompresi.
+            //    0 = paling cepat, berkas lebih besar, tetap lossless.
+            //  - WEBP lama (API < 30): angka = mutu, dan HANYA 100 yang
+            //    lossless. Memakai 0 di sini akan merusak gambar.
+            val (format, mutu) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Bitmap.CompressFormat.WEBP_LOSSLESS to 0
+            } else {
+                @Suppress("DEPRECATION")
+                Bitmap.CompressFormat.WEBP to 100
+            }
+            val ok = bmp.compress(format, mutu, out)
+            if (!ok) {
+                // Beberapa perangkat menolak WEBP untuk ukuran ekstrem
+                // (mis. strip webtoon sangat panjang). Jangan sampai satu
+                // halaman hilang hanya karena optimasi penyimpanan.
+                out.flush()
+                FileOutputStream(file).use { ulang ->
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, ulang)
+                }
+            }
+        }
     }
 
     /** Writes bytes into the SAF output tree under <LANG>/name, returns the created Uri. */

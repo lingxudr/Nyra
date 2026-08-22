@@ -6,7 +6,6 @@ import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.Bitmap
 import java.nio.FloatBuffer
-import kotlin.math.max
 
 /**
  * Detektor wilayah teks berbasis PP-OCRv5 mobile det (ONNX, Apache-2.0).
@@ -34,7 +33,7 @@ class TextRegionDetector(ctx: Context) : AutoCloseable {
     init {
         val modelBytes = ctx.assets.open(ASSET).use { it.readBytes() }
         val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(max(2, Runtime.getRuntime().availableProcessors() / 2))
+            setIntraOpNumThreads(Utas.untukPerangkat())
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         session = env.createSession(modelBytes, opts)

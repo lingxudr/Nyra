@@ -8,7 +8,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import java.nio.FloatBuffer
-import kotlin.math.max
 
 /**
  * Penghapus teks berbasis LaMa (ONNX), pengganti isi-putih untuk teks yang
@@ -68,7 +67,7 @@ class Inpainter(ctx: Context) : AutoCloseable {
     init {
         val bytes = berkas(ctx).readBytes()
         val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(max(2, Runtime.getRuntime().availableProcessors() / 2))
+            setIntraOpNumThreads(Utas.untukPerangkat())
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         session = env.createSession(bytes, opts)
@@ -94,14 +93,19 @@ class Inpainter(ctx: Context) : AutoCloseable {
         var done = 0
         for ((tile, anggota) in groups) {
             val kotak = anggota.map { dilated[it] }
-            runCatching { prosesTile(page, tile, kotak) }
+            runCatching { prosesTile(page, tile, kotak, log) }
                 .onFailure { log("  [!] Inpaint gagal pada satu petak: ${it.message}") }
                 .onSuccess { done++ }
         }
         return done
     }
 
-    private fun prosesTile(page: Bitmap, tile: InpaintMath.Tile, boxes: List<IntArray>) {
+    private fun prosesTile(
+        page: Bitmap,
+        tile: InpaintMath.Tile,
+        boxes: List<IntArray>,
+        log: (String) -> Unit = {}
+    ) {
         val T = InpaintMath.TILE
 
         // Potong petak lalu skalakan ke ukuran model.
@@ -172,12 +176,41 @@ class Inpainter(ctx: Context) : AutoCloseable {
         val balik = if (hasil.width == tile.w && hasil.height == tile.h) hasil
         else Bitmap.createScaledBitmap(hasil, tile.w, tile.h, true)
 
+        // Sebelum ditempel: apakah keluaran model masih masuk akal terhadap
+        // piksel di sekitarnya? Masker yang terlalu besar membuat LaMa
+        // kehilangan konteks dan mengembalikan bidang datar berwarna. Lebih
+        // baik teks aslinya tertinggal daripada artwork tertutup tambalan.
+        val terangPetak: Float
+        val satPetak: Float
+        run {
+            val asal = IntArray(tile.w * tile.h)
+            potong.getPixels(asal, 0, tile.w, 0, 0, tile.w, tile.h)
+            val (t, sv) = InpaintMath.statistik(asal)
+            terangPetak = t
+            satPetak = sv
+        }
+
         val c = Canvas(page)
+        var ditolak = 0
         for (b in boxes) {
             val src = Rect(b[0] - tile.x1, b[1] - tile.y1, b[2] - tile.x1, b[3] - tile.y1)
             val dst = Rect(b[0], b[1], b[2], b[3])
             if (src.width() <= 0 || src.height() <= 0) continue
+            if (src.left < 0 || src.top < 0 ||
+                src.right > balik.width || src.bottom > balik.height
+            ) continue
+
+            val isi = IntArray(src.width() * src.height())
+            balik.getPixels(isi, 0, src.width(), src.left, src.top, src.width(), src.height())
+            val (terangIsi, satIsi) = InpaintMath.statistik(isi)
+            if (!InpaintMath.tambalanMasukAkal(terangPetak, satPetak, terangIsi, satIsi)) {
+                ditolak++
+                continue
+            }
             c.drawBitmap(balik, src, dst, null)
+        }
+        if (ditolak > 0) {
+            log("  [!] $ditolak tambalan ditolak (warna menyimpang jauh dari sekitarnya).")
         }
 
         if (balik !== hasil) balik.recycle()

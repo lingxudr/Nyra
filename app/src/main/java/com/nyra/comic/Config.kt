@@ -297,6 +297,32 @@ class Config internal constructor(ctx: Context) {
         set(v) = prefs.edit().putBoolean("inpaint_lama", v).apply()
 
     /**
+     * Inpaint hanya untuk teks lepas yang besar; yang kecil cukup ditimpa.
+     *
+     * Satu inferensi LaMa memakan beberapa detik dan itu bagian termahal dari
+     * seluruh proses (laporan lapangan: 193 dari 280 detik). SFX kecil
+     * umumnya tertutup rapi oleh teks terjemahan yang digambar di atasnya,
+     * jadi membersihkannya lebih dulu sering tidak terlihat bedanya.
+     *
+     * Bawaannya mati supaya perilaku lama tidak berubah diam-diam bagi
+     * pengguna yang sudah puas dengan hasilnya.
+     */
+    var inpaintHanyaBesar: Boolean
+        get() = prefs.getBoolean("inpaint_hanya_besar", false)
+        set(v) = prefs.edit().putBoolean("inpaint_hanya_besar", v).apply()
+
+    /**
+     * Ambang "besar" untuk [inpaintHanyaBesar], sebagai bagian luas halaman.
+     *
+     * 0.01 (1 % halaman) diambil dari halaman uji 1127x1600: SFX besar yang
+     * benar-benar mengganggu bila tertinggal berada di atas ambang ini,
+     * sedangkan potongan kecil di bawahnya tertutup teks terjemahan.
+     */
+    var inpaintAmbangLuas: Float
+        get() = prefs.getFloat("inpaint_ambang_luas", 0.01f)
+        set(v) = prefs.edit().putFloat("inpaint_ambang_luas", v).apply()
+
+    /**
      * Simpan hasil tiap proses sebagai proyek yang bisa disunting ulang.
      *
      * Menyala secara bawaan: yang mahal dari terjemahan adalah deteksi dan

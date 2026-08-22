@@ -14,7 +14,7 @@ warna, dan bentuk aslinya.
 [![platform](https://img.shields.io/badge/platform-Android%207.0%2B-3DDC84)](#)
 [![language](https://img.shields.io/badge/Kotlin-100%25-7F52FF)](#)
 [![tests](https://img.shields.io/badge/tests-577%20passing-4ADE80)](#verifikasi)
-[![version](https://img.shields.io/badge/release-v2.7.0-7B61FF)](#apk-siap-pasang)
+[![version](https://img.shields.io/badge/release-v2.7.1-7B61FF)](#apk-siap-pasang)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#lisensi)
 
 </div>
@@ -59,7 +59,7 @@ jaringan adalah panggilan terjemahan ke LLM pilihan Anda.
 | minSdk / targetSdk | 24 (Android 7.0) / 34 |
 | ABI rilis | arm64-v8a (armeabi-v7a & x86_64 bisa dibangun sendiri) |
 | Bahasa sasaran | ID, EN, JP, ZH, ES, PT, JV, KO, RU, TH |
-| Tes | 577 tes / 63 kelas, semua hijau |
+| Tes | 619 tes / 69 kelas, semua hijau |
 
 ---
 
@@ -179,9 +179,9 @@ dan menimpanya berarti merusak artwork. Perilaku ini disengaja — lihat
 
 | Berkas | ABI | Ukuran |
 |---|---|---|
-| `nyra-2.7.0-arm64-v8a.apk` | arm64-v8a | 53.528.700 B |
-| `nyra-2.7.0-armeabi-v7a.apk` | armeabi-v7a | 48.117.468 B |
-| `nyra-2.7.0-x86_64.apk` | x86_64 | 56.279.502 B |
+| `nyra-2.7.1-arm64-v8a.apk` | arm64-v8a | 53.529.788 B |
+| `nyra-2.7.1-armeabi-v7a.apk` | armeabi-v7a | 48.118.556 B |
+| `nyra-2.7.1-x86_64.apk` | x86_64 | 56.280.590 B |
 
 Pilih **arm64-v8a** untuk hampir semua ponsel Android sejak 2016; armeabi-v7a
 hanya untuk perangkat 32-bit lama, dan x86_64 untuk emulator.
@@ -214,10 +214,10 @@ Verifikasi sebelum memasang:
 
 ```bash
 # Cocokkan dengan ringkasan yang tertera di halaman GitHub Release:
-sha256sum nyra-2.7.0-arm64-v8a.apk
+sha256sum nyra-2.7.1-arm64-v8a.apk
 
 # Pemeriksaan yang paling menentukan - sertifikat harus persis seperti di atas:
-apksigner verify --print-certs nyra-2.7.0-arm64-v8a.apk
+apksigner verify --print-certs nyra-2.7.1-arm64-v8a.apk
 ```
 
 ---
@@ -411,7 +411,7 @@ rilis jatuh ke debug-signing secara otomatis.
 ./gradlew testReleaseUnitTest
 ```
 
-**577 tes / 63 kelas / 0 gagal.**
+**619 tes / 69 kelas / 0 gagal.**
 
 Tes di sini sengaja diperlakukan sebagai bukti, bukan formalitas. Aturan yang
 dipegang:
@@ -479,6 +479,7 @@ Ringkas, dari yang terbaru. Rinciannya tersimpan di riwayat commit.
 
 | Versi | Isi |
 |---|---|
+| **v2.7.1** | Serpihan teks dari panel dan balon berbeda tidak lagi runtuh jadi satu blok seukuran halaman: toleransi penggabungan dihitung dari ukuran serpihan, bukan dari blok yang sedang tumbuh. Ikut menghapus tambalan zaitun di atas artwork, dan tambalan yang warnanya menyimpang jauh dari sekitarnya kini ditolak. Pengemasan petak inpaint diperbaiki (5 -> 3 inferensi per halaman uji). Sisi kecepatan: durasi tiap tahap kini dicatat dan diringkas di log, berkas kerja disimpan sebagai WEBP lossless (bukan PNG) sehingga penyimpanan antar-tahap jauh lebih cepat tanpa kehilangan mutu, jumlah utas inferensi dibatasi agar tidak melawan penjadwal big.LITTLE, dan ada opsi baru untuk membatasi inpaint hanya pada teks besar. |
 | **v2.7.0** | Penghapus watermark (salin-cermin lokal, 71,3 % piksel pulih vs 53,4 % difusi) dan penimpaan gaya huruf per balon saat tipografi otomatis salah menebak. Label versi di layar utama diperbaiki — sempat tertulis tetap "v2.0.0" selama enam rilis. |
 | **v2.6.0** | Detektor OCR kini jadi lapisan kedua di jalur RT-DETR, sehingga teks tanpa balon (mis. Jepang tegak di latar polos) tidak lagi lolos tanpa terjemahan. Penengahan tegak dihitung dari siluet tinta, bukan metrik font: kemiringan 11/11/16/7 px turun jadi 0/0/1/0 px. |
 | **v2.5.1** | Kotak yang penata teks pasti tolak tidak lagi dikirim ke provider (hemat token), dan terjemahan yang gagal tergambar kini dilaporkan, bukan hilang diam-diam. |

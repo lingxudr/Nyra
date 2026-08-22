@@ -51,6 +51,8 @@
     <string name="hint_konteks">Kirim terjemahan halaman terdahulu agar nama tokoh dan gaya bicara konsisten sepanjang bab. Menambah sedikit biaya token.</string>
     <string name="lbl_inpaint">Hapus teks luar balon dengan AI</string>
     <string name="hint_inpaint">Membangun ulang gambar di balik teks efek suara, bukan menimpanya dengan kotak putih. Hasil jauh lebih rapi di atas artwork, tetapi menambah beberapa detik tiap halaman.</string>
+    <string name="lbl_inpaint_besar">Inpaint hanya untuk teks besar</string>
+    <string name="hint_inpaint_besar">Lewati teks efek suara kecil, yang biasanya sudah tertutup rapi oleh teks terjemahan di atasnya. Inpaint adalah tahap paling lambat, jadi ini pilihan tercepat bila halaman terasa lama diproses.</string>
     <string name="model_belum_ada">Model belum diunduh (93 MB, sekali saja).</string>
     <string name="model_siap">Model siap dipakai (93 MB).</string>
     <string name="btn_unduh_model">Unduh model</string>

@@ -807,6 +807,23 @@
                             android:textColor="@color/text_muted"
                             android:textSize="11sp" />
 
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/swInpaintBesar"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="@string/lbl_inpaint_besar"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/hint_inpaint_besar"
+                            android:textColor="@color/text_muted"
+                            android:textSize="11sp" />
+
                         <TextView
                             android:id="@+id/tvModelInpaint"
                             android:layout_width="match_parent"

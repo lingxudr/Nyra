@@ -27,6 +27,9 @@ class Pipeline(
     @Volatile var cancelled = false
 
     private val renderer = TextRenderer(ctx)
+
+    /** Rincian waktu per tahap; dilaporkan di akhir proses. */
+    private val durasi = Durasi()
     private val rateLimiter = RateLimiter(cfg) { log(it) }
     private var detector: YoloDetector? = null
     private var textDetector: TextRegionDetector? = null
@@ -234,6 +237,7 @@ class Pipeline(
 
     fun run(inputs: List<Uri>, targetLanguage: String, outputTree: Uri): Result {
         val result = Result()
+        durasi.bersihkan()
         val started = System.currentTimeMillis()
         val provider = providerOverride ?: LLMProvider.create(cfg)
 
@@ -398,7 +402,10 @@ class Pipeline(
             log("[Arah baca] $hitungRtl halaman kanan-ke-kiri, $hitungLtr kiri-ke-kanan.")
         }
 
-        val secs = (System.currentTimeMillis() - started) / 1000.0
+        val totalMs = System.currentTimeMillis() - started
+        val secs = totalMs / 1000.0
+        log("")
+        for (baris in durasi.ringkasan(totalMs)) log(baris)
         log("")
         log("[Timer] Translation completed in ${"%.1f".format(secs)}s!")
         return result
@@ -741,8 +748,8 @@ class Pipeline(
                 // strip to PNG here (and decoding it again in pass 3) cost
                 // seconds per page and produced a byte-identical picture.
                 val partFile = if (splits == null) file
-                else File(partDir, "u%04d_p%02d.png".format(pIdx, partIdx)).also {
-                    Storage.savePng(bmp, it)
+                else File(partDir, "u%04d_p%02d.webp".format(pIdx, partIdx)).also {
+                    durasi.ukur(Durasi.Tahap.SIMPAN) { Storage.saveKerja(bmp, it) }
                 }
 
                 val boxes = detectBoxes(bmp)
@@ -768,8 +775,8 @@ class Pipeline(
                         continue
                     }
                     val crop = buildCrop(bmp, box, boxes) ?: continue
-                    val cropFile = File(cropDir, "c%04d_%02d_%03d.png".format(pIdx, partIdx, bIdx0))
-                    Storage.savePng(crop, cropFile)
+                    val cropFile = File(cropDir, "c%04d_%02d_%03d.webp".format(pIdx, partIdx, bIdx0))
+                    durasi.ukur(Durasi.Tahap.SIMPAN) { Storage.saveKerja(crop, cropFile) }
                     crop.recycle()
                     pending.add(PendingCrop(cropFile, pIdx, partIdx, bIdx0 + 1))
                 }
@@ -922,15 +929,27 @@ class Pipeline(
             var drawn = 0
             for (part in unit.parts) {
                 if (part.failed) continue
-                val bmp = Storage.decodeBitmap(part.file, cfg.maxImageSide) ?: continue
+                val bmp = durasi.ukur(Durasi.Tahap.DEKODE) {
+                    Storage.decodeBitmap(part.file, cfg.maxImageSide)
+                } ?: continue
 
                 // Hapus teks asli di luar balon dengan LaMa SEBELUM menggambar
                 // terjemahan: isi-putih di atas artwork meninggalkan kotak
                 // putih yang merusak screentone dan siluet di baliknya.
                 if (cfg.inpaintLama) {
-                    val sasaran = sasaranInpaint(
+                    var sasaran = sasaranInpaint(
                         part.boxes, part.translations, part.lepas, bmp.width, bmp.height
                     )
+                    if (cfg.inpaintHanyaBesar) {
+                        val sebelum = sasaran.size
+                        sasaran = InpaintMath.saringBesar(
+                            sasaran, bmp.width, bmp.height, cfg.inpaintAmbangLuas
+                        )
+                        val dilewati = sebelum - sasaran.size
+                        if (dilewati > 0) {
+                            log("  [i] $dilewati teks lepas kecil dilewati (mode inpaint hanya besar).")
+                        }
+                    }
                     if (sasaran.isNotEmpty()) {
                         val seam = inpaintOverride
                         val ip = if (seam != null) null else inpaint()
@@ -940,6 +959,10 @@ class Pipeline(
                                 if (seam != null) seam(sasaran)
                                 else ip!!.erase(bmp, sasaran) { m -> log(m) }
                             }.getOrElse { e -> log("  [!] Inpaint dilewati: ${e.message}"); 0 }
+                            durasi.catat(
+                                Durasi.Tahap.INPAINT,
+                                System.currentTimeMillis() - t0
+                            )
                             if (n > 0) {
                                 val dt = (System.currentTimeMillis() - t0) / 1000.0
                                 log("  [i] Inpaint: ${sasaran.size} teks lepas dibersihkan " +
@@ -953,7 +976,10 @@ class Pipeline(
                 for ((numStr, text) in part.translations) {
                     val bIdx = numStr.toIntOrNull() ?: continue
                     val box = part.boxes.getOrNull(bIdx - 1) ?: continue
-                    if (drawText(canvas, bmp, box, text, lang, part.warna, part.gaya, part.lepas)) drawn++
+                    val tergambar = durasi.ukur(Durasi.Tahap.RENDER) {
+                        drawText(canvas, bmp, box, text, lang, part.warna, part.gaya, part.lepas)
+                    }
+                    if (tergambar) drawn++
                     else if (!teksKosong(text)) tidakTergambar++
                 }
                 rendered.add(bmp)
@@ -962,7 +988,7 @@ class Pipeline(
 
             val finalBmp = if (rendered.size == 1) rendered[0] else hconcatReversed(rendered)
             val outFile = File(outDir, "p%04d_%s.png".format(pIdx, Storage.baseName(unit.srcName)))
-            Storage.savePng(finalBmp, outFile)
+            durasi.ukur(Durasi.Tahap.SIMPAN) { Storage.savePng(finalBmp, outFile) }
             outputs[pIdx] = outFile
 
             if (finalBmp !in rendered) finalBmp.recycle()
@@ -1270,7 +1296,10 @@ class Pipeline(
      * handful of bubbles. Windows are detected independently and their boxes
      * are mapped back into full-page coordinates.
      */
-    private fun detectBoxes(bmp: Bitmap): List<IntArray> {
+    private fun detectBoxes(bmp: Bitmap): List<IntArray> =
+        durasi.ukur(Durasi.Tahap.DETEKSI) { detectBoxesDalam(bmp) }
+
+    private fun detectBoxesDalam(bmp: Bitmap): List<IntArray> {
         warnaKotak.clear()
         gayaKotak.clear()
         teksLepasKotak.clear()
@@ -1393,9 +1422,11 @@ class Pipeline(
      */
     private fun tambahTeksLepasOcr(bmp: Bitmap, boxes: List<IntArray>): List<IntArray> {
         if (!cfg.ocrTeksLepas || cancelled) return boxes
-        val mentah = textDetectorOverride?.invoke(bmp)
-            ?: ocr()?.let { runCatching { it.detect(bmp) }.getOrElse { emptyList() } }
-            ?: emptyList()
+        val mentah = durasi.ukur(Durasi.Tahap.OCR) {
+            textDetectorOverride?.invoke(bmp)
+                ?: ocr()?.let { runCatching { it.detect(bmp) }.getOrElse { emptyList() } }
+                ?: emptyList()
+        }
         if (mentah.isEmpty()) return boxes
 
         // Baris teks mentah dari detektor OCR juga menjadi bahan bukti arah
@@ -1682,7 +1713,12 @@ class Pipeline(
 
         val raw = try {
             rateLimiter.executeWithRetry(provider.providerName) {
-                provider.translateWithReference(mosaic, rujukan, prompt)
+                // Hanya panggilan jaringannya yang dihitung; jeda rate-limit
+                // dan backoff sengaja tidak masuk supaya angka API tidak
+                // tercampur waktu menunggu.
+                durasi.ukur(Durasi.Tahap.API) {
+                    provider.translateWithReference(mosaic, rujukan, prompt)
+                }
             }
         } catch (ake: ApiKeyException) {
             throw ake

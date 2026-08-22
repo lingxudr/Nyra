@@ -7,7 +7,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
-import kotlin.math.max
 
 /**
  * Detektor RT-DETR-v2 (ogkalu/comic-text-and-bubble-detector, Apache-2.0),
@@ -78,7 +77,7 @@ class RtDetector(ctx: Context) : AutoCloseable {
     init {
         val bytes = ctx.assets.open(ASSET).use { it.readBytes() }
         val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(max(2, Runtime.getRuntime().availableProcessors() / 2))
+            setIntraOpNumThreads(Utas.untukPerangkat())
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         session = env.createSession(bytes, opts)

@@ -395,6 +395,11 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
             }
         }
 
+        b.swInpaintBesar.isChecked = cfg.inpaintHanyaBesar
+        b.swInpaintBesar.setOnCheckedChangeListener { _, checked ->
+            cfg.inpaintHanyaBesar = checked
+        }
+
         b.btnUnduhModel.setOnClickListener { unduhModel() }
         b.btnHapusModel.setOnClickListener {
             val bebas = ModelDownloader.hapus(this)
@@ -442,6 +447,7 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
             cfg.konteksHalaman = true
             cfg.simpanProyek = true
             cfg.inpaintLama = false
+            cfg.inpaintHanyaBesar = false
             recreate()
         }
     }

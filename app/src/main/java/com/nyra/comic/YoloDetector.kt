@@ -29,7 +29,7 @@ class YoloDetector(ctx: Context) : AutoCloseable {
     init {
         val modelBytes = ctx.assets.open("eyecypy.onnx").use { it.readBytes() }
         val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(max(2, Runtime.getRuntime().availableProcessors() / 2))
+            setIntraOpNumThreads(Utas.untukPerangkat())
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         session = env.createSession(modelBytes, opts)

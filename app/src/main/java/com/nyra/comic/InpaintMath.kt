@@ -1,5 +1,6 @@
 package com.nyra.comic
 
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -82,14 +83,42 @@ object InpaintMath {
 
         for (i in boxes.indices) {
             if (terpakai[i]) continue
-            val t = tileFor(boxes[i], imgW, imgH)
+
+            // Kumpulkan dulu sebanyak mungkin kotak yang gabungannya masih
+            // muat dalam satu petak model, baru petaknya dibentuk. Versi lama
+            // mengunci posisi petak pada kotak pertama, sehingga tetangga yang
+            // sebenarnya bisa ikut jadi terlewat hanya karena petaknya
+            // terlanjur terpasang di tempat yang salah.
             val anggota = mutableListOf(i)
             terpakai[i] = true
-            for (j in i + 1 until boxes.size) {
+            var ux1 = boxes[i][0]; var uy1 = boxes[i][1]
+            var ux2 = boxes[i][2]; var uy2 = boxes[i][3]
+
+            var tumbuh = true
+            while (tumbuh) {
+                tumbuh = false
+                for (j in boxes.indices) {
+                    if (terpakai[j]) continue
+                    val b = boxes[j]
+                    val nx1 = min(ux1, b[0]); val ny1 = min(uy1, b[1])
+                    val nx2 = max(ux2, b[2]); val ny2 = max(uy2, b[3])
+                    // Seluruh kotak harus muat: kotak yang terpotong akan
+                    // meninggalkan sisa teks di tepi petak.
+                    if (nx2 - nx1 <= TILE && ny2 - ny1 <= TILE) {
+                        ux1 = nx1; uy1 = ny1; ux2 = nx2; uy2 = ny2
+                        anggota.add(j)
+                        terpakai[j] = true
+                        tumbuh = true
+                    }
+                }
+            }
+
+            val t = tileFor(intArrayOf(ux1, uy1, ux2, uy2), imgW, imgH)
+            // Kotak yang kebetulan ikut tercakup petak final boleh menumpang:
+            // gratis, karena inferensinya tetap satu kali.
+            for (j in boxes.indices) {
                 if (terpakai[j]) continue
                 val b = boxes[j]
-                // Hanya digabung kalau seluruh kotak muat di petak yang sama:
-                // kotak yang terpotong akan menghasilkan sisa teks di tepinya.
                 if (b[0] >= t.x1 && b[1] >= t.y1 && b[2] <= t.x2 && b[3] <= t.y2) {
                     anggota.add(j)
                     terpakai[j] = true
@@ -112,6 +141,70 @@ object InpaintMath {
         if (d >= FEATHER) return 1f
         if (d < 0) return 0f
         return (d + 1).toFloat() / (FEATHER + 1).toFloat()
+    }
+
+    /**
+     * Saring kotak yang layak dibersihkan LaMa saat mode "hanya besar" aktif.
+     *
+     * Kotak kecil dilewati karena teks terjemahan yang digambar di atasnya
+     * sudah menutupinya; yang besar tetap dibersihkan karena sisa hurufnya
+     * akan menyembul di luar teks baru. [ambang] adalah bagian luas halaman
+     * (mis. 0.01 = 1 %).
+     */
+    fun saringBesar(
+        boxes: List<IntArray>, imgW: Int, imgH: Int, ambang: Float
+    ): List<IntArray> {
+        val luasHalaman = imgW.toFloat() * imgH.toFloat()
+        if (luasHalaman <= 0f) return boxes
+        val minLuas = luasHalaman * ambang
+        return boxes.filter { b ->
+            val w = (b[2] - b[0]).toFloat()
+            val h = (b[3] - b[1]).toFloat()
+            w > 0f && h > 0f && w * h >= minLuas
+        }
+    }
+
+    /** Selisih terang rata-rata yang masih dianggap wajar (0..255). */
+    const val BEDA_TERANG_MAKS = 42f
+
+    /** Warna yang boleh muncul di tambalan bila sekitarnya hitam-putih. */
+    const val SATURASI_MAKS = 18f
+
+    /** Saturasi rata-rata di bawah ini dianggap hitam-putih. */
+    const val AMBANG_ABU = 8f
+
+    /** Rata-rata terang dan saturasi sekumpulan piksel ARGB. */
+    fun statistik(piksel: IntArray): Pair<Float, Float> {
+        if (piksel.isEmpty()) return 0f to 0f
+        var terang = 0L
+        var sat = 0L
+        for (p in piksel) {
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+            terang += (r + g + b)
+            sat += (max(r, max(g, b)) - min(r, min(g, b)))
+        }
+        val n = piksel.size
+        return (terang.toFloat() / (3f * n)) to (sat.toFloat() / n)
+    }
+
+    /**
+     * Apakah tambalan model masih masuk akal terhadap piksel di sekelilingnya?
+     *
+     * LaMa yang diberi masker terlalu besar kehilangan konteks dan mengarang:
+     * pada halaman manga hitam-putih (terang 223, saturasi 0) ia pernah
+     * mengembalikan bidang zaitun gelap (terang 54, saturasi 15). Dua hal itu
+     * yang diperiksa: jangan jauh lebih gelap/terang dari sekitarnya, dan
+     * jangan berwarna kalau sekitarnya tidak berwarna.
+     */
+    fun tambalanMasukAkal(
+        terangSekitar: Float, satSekitar: Float,
+        terangTambalan: Float, satTambalan: Float
+    ): Boolean {
+        if (abs(terangTambalan - terangSekitar) > BEDA_TERANG_MAKS) return false
+        if (satSekitar < AMBANG_ABU && satTambalan > SATURASI_MAKS) return false
+        return true
     }
 
     /**
