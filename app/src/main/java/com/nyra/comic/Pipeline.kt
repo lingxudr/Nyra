@@ -212,6 +212,25 @@ class Pipeline(
         }
     }
 
+    /**
+     * Tutup semua sesi ONNX setelah tahap deteksi selesai.
+     *
+     * Ketiga model (YOLO, detektor teks, RT-DETR) memegang memori NATIVE yang
+     * tidak ikut dihitung heap Java dan tidak akan dibebaskan GC. Setelah
+     * pass 1 selesai tidak ada lagi yang memakainya, sementara pass 2 justru
+     * memuncak: beberapa mosaik puluhan megabita hidup bersamaan. Menahan
+     * sesi yang sudah tidak terpakai di sepanjang pass 2 membuat proses
+     * dibunuh OS pada bab panjang.
+     *
+     * Aman dipanggil kapan saja: yolo()/ocr()/rt() akan memuat ulang bila
+     * ternyata masih dibutuhkan.
+     */
+    private fun bebaskanDetektor() {
+        detector?.close(); detector = null
+        textDetector?.close(); textDetector = null
+        rtDetector?.close(); rtDetector = null
+    }
+
     fun close() {
         detector?.close()
         detector = null
@@ -836,6 +855,10 @@ class Pipeline(
             }
         }
 
+        // Deteksi sudah selesai untuk SEMUA halaman di titik ini. Lepaskan
+        // sesi ONNX sebelum gelombang request mulai mengalokasikan mosaik.
+        bebaskanDetektor()
+
         if (sisaPending.isNotEmpty() && !cancelled) {
             val maxPer = cfg.maxBubblesPerRequest
             val chunks = sisaPending.chunked(maxPer)
@@ -847,7 +870,16 @@ class Pipeline(
             // gelombang N sempat masuk pageContext sebelum gelombang N+1
             // menyusun prompt-nya. Ini menjaga konsistensi nama tokoh yang
             // akan hilang kalau semua request dilepas sekaligus.
-            val lebarGelombang = cfg.requestParalel.coerceIn(1, 8)
+            // Setelan pengguna adalah BATAS ATAS, bukan janji. Tiap request
+            // dalam satu gelombang menahan bitmap mosaik puluhan megabita
+            // secara bersamaan; kalau perangkat tidak sanggup, prosesnya
+            // dibunuh sistem tanpa exception dan tanpa log — persis gejala
+            // "FC di tengah bab". Jadi lebarnya diturunkan ke yang muat.
+            val lebarGelombang = Memori.untukPerangkat(ctx, cfg)
+            if (lebarGelombang < cfg.requestParalel.coerceIn(1, 8)) {
+                log("  [i] Request paralel diturunkan ${cfg.requestParalel} -> " +
+                    "$lebarGelombang menyesuaikan memori yang tersedia.")
+            }
             var selesai = 0
             for (gelombang in chunks.indices.chunked(lebarGelombang)) {
                 if (cancelled) break
@@ -1114,12 +1146,17 @@ class Pipeline(
         )
         val mosaic = Mosaic.build(shrunk, cfg, numberPaint)
 
-        // shrinkIfTooTall mengembalikan crops ASLI kalau semuanya sudah muat,
-        // jadi bitmap yang sama bisa muncul di kedua daftar. Bandingkan dulu
-        // supaya tidak ada yang di-recycle dua kali.
-        val originals = crops.map { it.bitmap }
-        shrunk.forEach { if (it.bitmap !in originals) it.bitmap.recycle() }
-        originals.forEach { it.recycle() }
+        // shrinkIfTooTall kini MEMBEBASKAN sendiri bitmap asli yang sudah
+        // digantikan salinan kecil (supaya kedua versi tidak pernah hidup
+        // bersamaan). Yang tersisa untuk dibereskan di sini hanyalah bitmap
+        // yang benar-benar masih hidup: daftar hasil, ditambah crop asli yang
+        // dikembalikan apa adanya karena semuanya sudah muat.
+        // recycle() bersifat idempoten, tapi identitas tetap dibandingkan agar
+        // niatnya jelas dan tidak ada bitmap yang terlewat.
+        val hidup = LinkedHashSet<Bitmap>()
+        shrunk.forEach { hidup.add(it.bitmap) }
+        crops.forEach { if (!it.bitmap.isRecycled) hidup.add(it.bitmap) }
+        hidup.forEach { runCatching { if (!it.isRecycled) it.recycle() } }
 
         return Mosaik(mosaic, shrunk.map { it.id })
     }

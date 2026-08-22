@@ -112,8 +112,19 @@ class TranslationService : Service() {
             var result: Pipeline.Result? = null
             try {
                 result = p.run(inputs, lang, output)
-            } catch (e: Exception) {
-                emit("[!] Fatal error: ${e.message}")
+            } catch (e: Throwable) {
+                // Throwable, bukan Exception. Kegagalan paling mahal di sini
+                // adalah OutOfMemoryError saat menyusun mosaik, dan itu Error
+                // bukan Exception: dulu ia lolos dari catch dan mematikan
+                // coroutine tanpa satu baris pun di log, sehingga dari sisi
+                // pengguna aplikasi tampak "FC" begitu saja. Sekarang selalu
+                // ada penjelasan, dan blok finally tetap membereskan pipeline.
+                val nama = e::class.java.simpleName
+                emit("[!] Fatal error: $nama: ${e.message}")
+                if (e is OutOfMemoryError) {
+                    emit("[!] Kehabisan memori. Turunkan 'Request paralel' " +
+                        "atau 'Balon per request' di Pengaturan, lalu coba lagi.")
+                }
             } finally {
                 p.close()
                 pipeline = null

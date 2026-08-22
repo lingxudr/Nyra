@@ -69,10 +69,17 @@ object Mosaic {
         val targetH = max(1, maxHeight - totalSpace)
         val ratio = targetH.toFloat() / totalImageHeight.toFloat()
 
+        // Bitmap asli dibebaskan SEGERA setelah salinan kecilnya jadi.
+        // Sebelumnya seluruh daftar asli tetap hidup sampai pemanggil
+        // membersihkannya, jadi puncak memorinya dua kali lipat: 20 crop asli
+        // + 20 salinan sekaligus. Pada bab panjang dengan beberapa request
+        // paralel, itulah yang membuat proses dibunuh sistem.
         return crops.map { c ->
             val nw = max(1, (c.bitmap.width * ratio).toInt())
             val nh = max(1, (c.bitmap.height * ratio).toInt())
-            Crop(c.id, Bitmap.createScaledBitmap(c.bitmap, nw, nh, true))
+            val kecil = Bitmap.createScaledBitmap(c.bitmap, nw, nh, true)
+            if (kecil !== c.bitmap) c.bitmap.recycle()
+            Crop(c.id, kecil)
         }
     }
 

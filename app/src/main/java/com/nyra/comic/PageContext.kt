@@ -3,6 +3,14 @@ package com.nyra.comic
 /**
  * Riwayat terjemahan halaman sebelumnya, untuk dikirim sebagai konteks.
  *
+ * AMAN-THREAD. Dalam mode paralel beberapa thread pekerja membaca [size] dan
+ * [promptSection] untuk menyusun prompt, sementara thread utama menulis lewat
+ * [add] saat menerapkan hasil gelombang sebelumnya. ArrayDeque biasa tidak
+ * tahan itu: [add] melakukan addLast + rangkaian removeFirst (batas halaman
+ * dan anggaran token), jadi pembacaan yang berbarengan bisa melihat deque di
+ * tengah perubahan dan melempar ConcurrentModificationException atau
+ * IndexOutOfBoundsException. Semua akses ke [pages] karena itu dikunci.
+ *
  * Tujuannya konsistensi lintas halaman: nama tokoh, sapaan, dan gaya bicara
  * tidak berubah-ubah di tengah bab. Idenya mengikuti "translation history"
  * BallonsTranslator, termasuk anggaran token bawaannya (4096).
@@ -16,8 +24,9 @@ class PageContext(
     data class Page(val name: String, val lines: List<String>)
 
     private val pages = ArrayDeque<Page>()
+    private val kunci = Any()
 
-    val size: Int get() = pages.size
+    val size: Int get() = synchronized(kunci) { pages.size }
 
     /**
      * Catat satu halaman selesai. Baris kosong dan penanda SKIP dibuang.
@@ -28,7 +37,7 @@ class PageContext(
      * memalsukan baris perintah pada prompt halaman berikutnya. Pembersihan
      * dilakukan SEBELUM batas panjang diukur, sama seperti pada glosarium.
      */
-    fun add(name: String, lines: List<String>) {
+    fun add(name: String, lines: List<String>) { synchronized(kunci) {
         val bersih = lines
             .map { tanpaPagar(Glossary.bersihkan(it)) }
             .filter { it.isNotEmpty() && !it.equals(SKIP, ignoreCase = true) }
@@ -42,9 +51,9 @@ class PageContext(
         pages.addLast(Page(namaBersih, bersih))
         while (pages.size > MAX_PAGES) pages.removeFirst()
         trim()
-    }
+    } }
 
-    fun clear() = pages.clear()
+    fun clear() = synchronized(kunci) { pages.clear() }
 
     /**
      * Buang halaman terlama selama total masih di atas anggaran, tetapi selalu
@@ -65,9 +74,9 @@ class PageContext(
     }
 
     /** Blok prompt; string kosong kalau belum ada riwayat. */
-    fun promptSection(): String {
-        if (pages.isEmpty()) return ""
-        return buildString {
+    fun promptSection(): String = synchronized(kunci) {
+        if (pages.isEmpty()) return@synchronized ""
+        buildString {
             append("\nPREVIOUS PAGES CONTEXT:\n")
             append("These are your own translations from earlier pages of this same chapter. ")
             append("Use them as background only, to keep character names, honorifics, pronouns ")
