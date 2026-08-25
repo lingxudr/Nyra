@@ -65,9 +65,18 @@ object Typography {
 
     // --- batas keputusan ---------------------------------------------------
 
-    /** Rasio isi tidak pernah dipakai di luar rentang ini, sekonyol apa pun ukurannya. */
-    const val ISI_MIN = 0.55f
-    const val ISI_MAKS = 0.92f
+    /**
+     * Rasio isi tidak pernah dipakai di luar rentang ini, sekonyol apa pun
+     * ukurannya.
+     *
+     * Ronde 40 — batas bawah dinaikkan dari 0,55. Angka lama menyisakan 45 %
+     * lebar DAN 45 % tinggi balon sebagai margin kosong, yang berarti teks
+     * hanya boleh memakai 30 % luas balon. Digabung dengan fontScale 0,92
+     * pada tuple dasar, huruf terjemahan keluar jauh lebih kecil daripada
+     * huruf Jepang yang digantikannya - keluhan "teks terlalu kecil".
+     */
+    const val ISI_MIN = 0.62f
+    const val ISI_MAKS = 0.94f
 
     /** Bila blok teks asli tidak diketahui, pakai nilai ini (perilaku lama). */
     const val ISI_BAWAAN = 0.78f
@@ -101,6 +110,18 @@ object Typography {
         val tebalGoresan: Float,
         val berat: Berat,
         val terukur: Boolean,
+        /**
+         * Bagian LEBAR balon yang dipakai blok teks asli (tw/bw), sebelum
+         * dijepit ke rentang mana pun.
+         *
+         * Terpisah dari [rasioIsi] karena rasio isi bersifat simetris - satu
+         * angka untuk kedua sumbu - sedangkan balon manga hampir tidak pernah
+         * simetris isinya. Lihat [putuskan] untuk alasan keduanya kadang
+         * ditukar.
+         */
+        val fraksiLebar: Float = ISI_BAWAAN,
+        /** Bagian TINGGI balon yang dipakai blok teks asli (th/bh). */
+        val fraksiTinggi: Float = ISI_BAWAAN,
         /**
          * Disetel tangan oleh pengguna lewat editor.
          *
@@ -188,6 +209,12 @@ object Typography {
         val isiLinear = sqrt((luasTeks / luasBalon).coerceIn(0f, 1f))
         val rasioIsi = isiLinear.coerceIn(ISI_MIN, ISI_MAKS)
 
+        // Fraksi tiap sumbu disimpan mentah. Blok tategaki yang ramping dan
+        // tinggi memberi fraksiLebar kecil tapi fraksiTinggi besar; itu
+        // keterangan yang hilang begitu keduanya diperas jadi satu angka.
+        val fraksiLebar = (tw.toFloat() / bw).coerceIn(0f, 1f)
+        val fraksiTinggi = (th.toFloat() / bh).coerceIn(0f, 1f)
+
         // Kepadatan tinta dan tebal goresan.
         var jumlahTinta = 0
         var totalPiksel = 0
@@ -241,7 +268,9 @@ object Typography {
             kepadatan = kepadatan,
             tebalGoresan = tebal,
             berat = berat,
-            terukur = true
+            terukur = true,
+            fraksiLebar = fraksiLebar,
+            fraksiTinggi = fraksiTinggi
         )
     }
 
@@ -316,14 +345,36 @@ object Typography {
         // sampai tak terbaca demi menampung jarak antar baris.
         val spasiAkhir = if (panjangTeks > 120) min(spasi, SPASI_RAPAT) else spasi
 
-        val skala = if (gaya.terukur || gaya.dikunci) gaya.rasioIsi else ISI_BAWAAN
+        val pakaiUkuran = gaya.terukur || gaya.dikunci
+        val skala = if (pakaiUkuran) gaya.rasioIsi else ISI_BAWAAN
+
+        // Sumbu ditukar ketika tulisan aslinya TEGAK.
+        //
+        // Ini sumber utama keluhan "teks terlalu kecil". Blok tategaki itu
+        // ramping dan jangkung: pada balon 200x260 blok teksnya bisa 70x230,
+        // jadi fraksiLebar 0,35 sementara fraksiTinggi 0,88. Terjemahan
+        // Indonesia ditata MENDATAR, jadi ia butuh persis kebalikannya -
+        // lebar hampir penuh, tinggi secukupnya. Memberi skalaLebar 0,35
+        // pada teks mendatar memaksa pencarian biner menemukan font mungil
+        // supaya muat di lajur sempit yang tidak pernah dipakainya.
+        //
+        // Karena itu untuk balon tategaki, jatah lebar diambil dari fraksi
+        // TINGGI aslinya (seberapa penuh balon dipakai sepanjang arah baca)
+        // dan sebaliknya. Balon yang aslinya sudah mendatar tidak ditukar:
+        // pengukurannya memang sudah sesumbu dengan hasil render.
+        var skalaW = skala
+        var skalaH = skala
+        if (pakaiUkuran && gaya.arah == Arah.TEGAK && !bahasaTegak) {
+            skalaW = gaya.fraksiTinggi.coerceIn(ISI_MIN, ISI_MAKS)
+            skalaH = gaya.fraksiLebar.coerceAtLeast(ISI_MIN).coerceAtMost(ISI_MAKS)
+        }
 
         return Rencana(
             ukuranFont = ukuranMuat.coerceIn(FONT_MIN, FONT_MAKS),
-            berat = if (gaya.terukur || gaya.dikunci) gaya.berat else Berat.NORMAL,
+            berat = if (pakaiUkuran) gaya.berat else Berat.NORMAL,
             spasiBaris = spasiAkhir,
-            skalaLebar = skala,
-            skalaTinggi = skala,
+            skalaLebar = skalaW,
+            skalaTinggi = skalaH,
             // Arah tulisan mengikuti bahasa sasaran; pengukuran hanya
             // menguatkan, tidak pernah memaksa. Merender bahasa Indonesia
             // secara tegak hanya karena aslinya tategaki akan menghasilkan

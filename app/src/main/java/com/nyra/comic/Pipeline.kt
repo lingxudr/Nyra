@@ -1161,6 +1161,15 @@ class Pipeline(
         return Mosaik(mosaic, shrunk.map { it.id })
     }
 
+    /**
+     * Banyaknya potongan per mosaik saat MENCOBA ULANG nomor yang tidak
+     * dijawab. Jauh lebih kecil daripada maxBubblesPerRequest: percobaan
+     * ulang hanya terjadi ketika balasan pertama sudah bermasalah, jadi
+     * yang diutamakan adalah balasan pendek yang pasti selesai, bukan
+     * hemat panggilan.
+     */
+    private val RETRY_CHUNK = 8
+
     /** Hasil satu request mosaik, belum diterapkan ke state bersama. */
     private class HasilChunk(
         val diterima: Map<String, String>,
@@ -1242,16 +1251,21 @@ class Pipeline(
         val translations = translateMosaic(mosaic, provider, lang, rujukan)
         mosaic.recycle()
 
-        if (translations.isEmpty()) {
+        if (translations.isEmpty() && cancelled) {
             // rujukan TIDAK di-recycle: bitmapnya milik cacheRujukan dan masih
             // dipakai chunk lain dari halaman yang sama.
-            if (cancelled) {
-                log("  [!] Request ${cIdx + 1} stopped before it returned.")
-            } else {
-                log("  [!] No translation returned for request ${cIdx + 1} " +
-                    "($jumlahPotongan bubble(s) left untranslated).")
-            }
+            log("  [!] Request ${cIdx + 1} stopped before it returned.")
             return null
+        }
+        if (translations.isEmpty()) {
+            // Balasan kosong total dulu berarti menyerah seketika: seluruh
+            // chunk (sampai 30 balon) dibiarkan berbahasa asli walau
+            // potongannya sudah dibuat dan tokennya sudah terbakar. Jalur
+            // "minta ulang" di bawah sebetulnya sudah mampu menanganinya —
+            // ia hanya tidak pernah tercapai karena return dini ini.
+            // Sekarang chunk kosong ikut masuk ke sana dan dicoba sekali lagi.
+            log("  [!] Request ${cIdx + 1} tidak dijawab " +
+                "($jumlahPotongan balon) — mencoba ulang sekali.")
         }
         val diterima = HashMap<String, String>(translations)
 
@@ -1265,8 +1279,18 @@ class Pipeline(
             val ulang = hilang.mapNotNull { id ->
                 idMapping[id]?.let { id to it }
             }
-            val ulangSusunan = susunMosaik(ulang, numberPaint)
-            if (ulangSusunan != null) {
+            // Percobaan ulang dipecah menjadi kelompok kecil.
+            //
+            // Balasan yang hilang seluruhnya hampir selalu berarti mosaiknya
+            // terlalu padat: makin banyak potongan dalam satu gambar, makin
+            // panjang JSON yang harus ditulis model dan makin besar peluang
+            // ia terpotong atau salah kutip. Mengirim ulang 30 potongan yang
+            // sama dalam satu gambar cenderung gagal dengan cara yang sama.
+            // Kelompok kecil membuat tiap balasan pendek dan mandiri -
+            // kegagalan satu kelompok tidak lagi menjatuhkan sisanya.
+            for (bagian in ulang.chunked(RETRY_CHUNK)) {
+                if (cancelled) break
+                val ulangSusunan = susunMosaik(bagian, numberPaint) ?: continue
                 val ulangMosaic = ulangSusunan.bitmap
                 val tambahan = runCatching {
                     translateMosaic(ulangMosaic, provider, lang, rujukan)
@@ -1275,14 +1299,15 @@ class Pipeline(
                 for ((id, text) in tambahan) {
                     if (id in idMapping && id !in diterima) diterima[id] = text
                 }
-                val masihHilang = idMapping.keys.count { it !in diterima }
-                if (masihHilang > 0) {
-                    log("  [!] $masihHilang balon tetap tidak dijawab setelah diminta ulang.")
-                } else {
-                    log("  [OK] Semua nomor yang tertinggal berhasil dilengkapi.")
-                }
+            }
+            val masihHilang = idMapping.keys.count { it !in diterima }
+            if (masihHilang > 0) {
+                log("  [!] $masihHilang balon tetap tidak dijawab setelah diminta ulang.")
+            } else {
+                log("  [OK] Semua nomor yang tertinggal berhasil dilengkapi.")
             }
         }
+        if (diterima.isEmpty()) return null
 
         return HasilChunk(diterima, idMapping)
     }
@@ -1772,8 +1797,16 @@ class Pipeline(
             for (key in obj.keys()) map[key] = obj.optString(key, "")
             map
         } catch (e: Exception) {
-            log("  [!] Could not parse translation JSON: ${e.message}")
-            emptyMap()
+            // JSON rusak bukan alasan membuang seluruh request yang sudah
+            // dibayar. Pungut pasangan nomor-teks yang masih utuh; hanya
+            // baris yang benar-benar cacat yang hilang.
+            val selamat = runCatching { BoxUtils.salvageJson(raw) }.getOrDefault(emptyMap())
+            if (selamat.isNotEmpty()) {
+                log("  [!] JSON cacat (${e.message}) — ${selamat.size} balon diselamatkan.")
+            } else {
+                log("  [!] Could not parse translation JSON: ${e.message}")
+            }
+            selamat
         }
     }
 

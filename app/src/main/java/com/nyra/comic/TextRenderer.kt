@@ -11,6 +11,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import java.io.File
 import java.util.regex.Pattern
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
@@ -39,6 +40,16 @@ class TextRenderer(ctx: Context) {
     }
 
     companion object {
+        /**
+         * Batas paling bawah penjamin muat, di bawah minFont mana pun.
+         *
+         * Penjamin muat boleh menembus [Typography.FONT_MIN] karena tugasnya
+         * mencegah tabrakan antar balon, tetapi tetap perlu lantai supaya
+         * perulangan pasti berhenti dan teks tidak menyusut jadi debu pada
+         * balon yang keliru terdeteksi seukuran beberapa piksel.
+         */
+        private const val FONT_DARURAT = 6
+
         /**
          * Typeface paket font, dibagi seluruh proses.
          *
@@ -220,6 +231,57 @@ class TextRenderer(ctx: Context) {
     }
 
     /**
+     * Pemenggalan paksa per huruf - upaya TERAKHIR, bukan pembungkus biasa.
+     *
+     * Satu kata panjang tanpa tanda hubung ("KEBERLANGSUNGANNYA" di balon
+     * 60x40) tidak bisa dipecah oleh [wrapText] maupun [splitHyphen], jadi
+     * lebarnya tetap melebihi balon berapa pun kecilnya font. Mengecilkan
+     * font sampai lantai darurat pun tidak menolong; teks tetap keluar garis.
+     *
+     * Fungsi ini memotong di tengah kata dan menambahkan tanda hubung, cara
+     * yang sama dipakai penata huruf pada kolom sempit. Sengaja TIDAK dipakai
+     * di dalam pencarian biner: kalau setiap kata boleh dipenggal, pencarian
+     * akan selalu "muat" pada font terbesar dan seluruh halaman jadi penuh
+     * kata terpotong. Hanya dipanggil setelah pengecilan biasa menyerah.
+     */
+    private fun pecahPaksa(text: String, paint: Paint, maxW: Float): List<String> {
+        val hasil = ArrayList<String>()
+        var baris = StringBuilder()
+        val hubung = paint.measureText("-")
+
+        fun tutup() {
+            if (baris.isNotEmpty()) { hasil.add(baris.toString()); baris = StringBuilder() }
+        }
+
+        for (kata in text.split(Regex("\\s+")).filter { it.isNotEmpty() }) {
+            val calon = if (baris.isEmpty()) kata else "$baris $kata"
+            if (paint.measureText(calon) <= maxW) {
+                baris = StringBuilder(calon)
+                continue
+            }
+            tutup()
+            if (paint.measureText(kata) <= maxW) { baris = StringBuilder(kata); continue }
+            // Kata ini sendiri tidak muat: potong per huruf.
+            var sisa = kata
+            while (paint.measureText(sisa) > maxW) {
+                var n = 1
+                while (n < sisa.length &&
+                    paint.measureText(sisa.substring(0, n + 1)) + hubung <= maxW
+                ) n++
+                if (n <= 0) n = 1
+                hasil.add(sisa.substring(0, n) + "-")
+                sisa = sisa.substring(n)
+                // Huruf tunggal pun lebih lebar daripada balon: berhenti,
+                // penjamin muat di pemanggil yang akan mengecilkan font.
+                if (n == 1 && paint.measureText(sisa.take(1)) > maxW) break
+            }
+            if (sisa.isNotEmpty()) baris = StringBuilder(sisa)
+        }
+        tutup()
+        return if (hasil.isEmpty()) listOf("") else hasil
+    }
+
+    /**
      * Menyusun baris seimbang lewat [Typography.pecahSeimbang].
      *
      * Mengembalikan null bila tidak ada susunan yang muat; pemanggil lalu
@@ -373,11 +435,61 @@ class TextRenderer(ctx: Context) {
             block.width <= maxW && block.height <= maxH
         }
 
-        val finalSize = max(setting.minFont, (bestFontSize * setting.fontScale).toInt())
-        val paint = makePaint(tf, finalSize.toFloat(), tebal, jarak)
-        val spacing = max(1f, finalSize * setting.spacingRatio)
-        val lines = wrapText(text, paint, maxW)
-        val block = measureBlock(lines, paint, spacing)
+        var finalSize = max(setting.minFont, (bestFontSize * setting.fontScale).toInt())
+        var paint = makePaint(tf, finalSize.toFloat(), tebal, jarak)
+        var spacing = max(1f, finalSize * setting.spacingRatio)
+        var lines = wrapText(text, paint, maxW)
+        var block = measureBlock(lines, paint, spacing)
+
+        // Penjamin muat (ronde 40).
+        //
+        // Dua jalur membuat teks bisa lolos lebih besar daripada balonnya:
+        //
+        //  1. [Typography.cariUkuran] mengembalikan batas bawahnya ketika
+        //     TIDAK ADA ukuran yang muat - misalnya satu kata panjang tanpa
+        //     tanda hubung yang lebih lebar daripada balon walau pada
+        //     minFont. Nilai itu lalu digambar begitu saja.
+        //  2. minFont pada `max(setting.minFont, ...)` di atas bisa menaikkan
+        //     kembali ukuran yang sudah ditemukan mengecil.
+        //
+        // Akibatnya balon padat saling bertindih dan tulisan keluar dari
+        // garis balon. Di sini ukuran diturunkan sampai blok benar-benar
+        // masuk, menembus minFont bila memang perlu: huruf kecil masih bisa
+        // dibaca, huruf yang menabrak panel tetangga tidak.
+        // Kalau yang meluap adalah LEBAR-nya, biang keladinya kata tunggal
+        // yang tak terpecah. Mengecilkan font tidak akan menolong sebelum
+        // kata itu dipenggal, jadi penggal dulu baru ukur ulang.
+        if (block.width > maxW) {
+            val dipenggal = pecahPaksa(text, paint, maxW)
+            val blokPenggal = measureBlock(dipenggal, paint, spacing)
+            if (blokPenggal.width < block.width) {
+                lines = dipenggal
+                block = blokPenggal
+            }
+        }
+
+        while ((block.width > maxW || block.height > maxH) && finalSize > FONT_DARURAT) {
+            // Turun sebanding dengan sisi terburuk supaya tidak perlu puluhan
+            // langkah satu piksel pada balon yang jauh terlalu kecil.
+            val faktor = min(maxW / max(1f, block.width), maxH / max(1f, block.height))
+            val berikut = floor(finalSize * faktor.coerceIn(0.5f, 0.97f)).toInt()
+            finalSize = max(FONT_DARURAT, min(berikut, finalSize - 1))
+            paint = makePaint(tf, finalSize.toFloat(), tebal, jarak)
+            spacing = max(1f, finalSize * setting.spacingRatio)
+            lines = wrapText(text, paint, maxW)
+            block = measureBlock(lines, paint, spacing)
+            // Pemenggalan paksa harus diulang tiap putaran: wrapText di atas
+            // mengembalikan kata utuh lagi, jadi tanpa ini lebarnya tidak
+            // pernah menyusut dan perulangan berjalan sampai lantai darurat.
+            if (block.width > maxW) {
+                val dipenggal = pecahPaksa(text, paint, maxW)
+                val blokPenggal = measureBlock(dipenggal, paint, spacing)
+                if (blokPenggal.width < block.width) {
+                    lines = dipenggal
+                    block = blokPenggal
+                }
+            }
+        }
 
         val centerX = x1 + boxW / 2f
         // Penengahan tegak memakai batas tinta, bukan metrik huruf.

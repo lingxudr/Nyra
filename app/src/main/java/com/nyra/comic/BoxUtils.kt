@@ -339,6 +339,63 @@ object BoxUtils {
         return intArrayOf(cx1, cy1, cx2, cy2)
     }
 
+    /**
+     * Pungut pasangan `"nomor": "teks"` dari balasan yang JSON-nya RUSAK.
+     *
+     * Kenapa ada. Satu tanda kutip yang tidak di-escape di tengah balasan
+     * membuat JSONObject melempar, dan sebelum ronde 40 seluruh request ikut
+     * hangus: 30 balon yang deteksi, potongan, dan tokennya SUDAH DIBAYAR
+     * dikembalikan sebagai `emptyMap()`. Pada batch 19 halaman itu berarti
+     * empat halaman penuh (013-016) keluar tanpa satu pun terjemahan,
+     * padahal 29 dari 30 balonnya baik-baik saja.
+     *
+     * Pemulihan ini sengaja BUKAN parser JSON. Ia memindai teks mentah dan
+     * mengambil setiap `"<angka>" : "<isi>"`, berhenti pada tanda kutip
+     * penutup yang tidak didahului backslash. Baris yang rusak dilewati;
+     * baris yang utuh tetap terpakai. Hasil terburuknya sama dengan
+     * perilaku lama (peta kosong), hasil terbaiknya menyelamatkan hampir
+     * seluruh request.
+     *
+     * Hanya dipanggil SETELAH JSONObject gagal, jadi jalur normal tidak
+     * berubah sedikit pun.
+     */
+    fun salvageJson(raw: String): Map<String, String> {
+        val hasil = LinkedHashMap<String, String>()
+        val re = Regex("\"(\\d{1,4})\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"")
+        for (m in re.findAll(raw)) {
+            val key = m.groupValues[1]
+            if (hasil.containsKey(key)) continue
+            hasil[key] = unescapeJson(m.groupValues[2])
+        }
+        return hasil
+    }
+
+    /** Kembalikan escape JSON standar ke karakter aslinya. */
+    private fun unescapeJson(s: String): String {
+        if (!s.contains('\\')) return s
+        val sb = StringBuilder(s.length)
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            if (c != '\\' || i == s.length - 1) { sb.append(c); i++; continue }
+            when (val n = s[i + 1]) {
+                'n' -> { sb.append('\n'); i += 2 }
+                't' -> { sb.append('\t'); i += 2 }
+                'r' -> { sb.append('\r'); i += 2 }
+                'b' -> { sb.append('\b'); i += 2 }
+                '"', '\\', '/' -> { sb.append(n); i += 2 }
+                'u' -> {
+                    val hex = s.substring(i + 2, min(i + 6, s.length))
+                    val cp = hex.toIntOrNull(16)
+                    if (hex.length == 4 && cp != null) { sb.append(cp.toChar()); i += 6 }
+                    else { sb.append(c); i++ }
+                }
+                else -> { sb.append(c); i++ }
+            }
+        }
+        return sb.toString()
+    }
+
     /** bersihkan_json_dari_gemini */
     fun cleanJson(raw: String): String {
         var t = raw.trim()
