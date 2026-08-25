@@ -135,6 +135,14 @@ class Pipeline(
     private var hitungRtl = 0
     private var hitungLtr = 0
 
+    /**
+     * Balon yang terdeteksi namun tidak pernah mendapat terjemahan, dan
+     * berapa yang diminta seluruhnya. Lihat [Result.balonTakTerjemah] untuk
+     * alasan angka ini terpisah dari hitungan halaman.
+     */
+    private var balonDiminta = 0
+    private var balonTerjawab = 0
+
     /** Akumulator token/biaya untuk satu proses. */
     private val penghitung = Usage.Penghitung()
 
@@ -172,7 +180,20 @@ class Pipeline(
         /** Perkiraan biaya USD; 0.0 bila tarif model tidak dikenal. */
         var biaya: Double = 0.0,
         /** Berapa balon dijawab dari cache alih-alih dari API. */
-        var cacheKena: Int = 0
+        var cacheKena: Int = 0,
+        /**
+         * Balon yang sudah terdeteksi tetapi tidak pernah dapat terjemahan.
+         *
+         * Dipisahkan dari [failed] karena keduanya menghitung hal berbeda:
+         * failed menghitung HALAMAN yang gagal dirender, sedangkan ini
+         * menghitung BALON yang gagal diterjemahkan. Pada uji lapangan ronde
+         * 40, satu balasan JSON cacat membuang 30 balon dan mengosongkan
+         * empat halaman, namun setiap halaman tetap berhasil dirender (dengan
+         * teks Jepang aslinya) sehingga laporan berbunyi "Success: 19,
+         * Failed: 0" - hijau padahal seperlima pekerjaan hilang. Tanpa angka
+         * ini pengguna tidak punya cara tahu.
+         */
+        var balonTakTerjemah: Int = 0
     )
 
     private fun yolo(): YoloDetector {
@@ -267,6 +288,8 @@ class Pipeline(
         hitungRtl = 0
         hitungLtr = 0
         arahTerakhir = null
+        balonDiminta = 0
+        balonTerjawab = 0
 
         cache = cacheOverride ?: if (cfg.cacheTerjemahan) {
             runCatching { TranslationCache(TranslationCache.bawaan(ctx.filesDir)) }
@@ -416,6 +439,20 @@ class Pipeline(
         }
         cacheKenaTerakhir.let {
             if (it > 0) log("[Cache] $it balon dihemat pada proses ini.")
+        }
+
+        // Kejujuran laporan (ronde 40). Hitungan Success/Failed menghitung
+        // HALAMAN yang dirender, jadi halaman yang keluar dengan teks Jepang
+        // aslinya tetap dihitung sukses. Balon yang hilang harus disebutkan
+        // sendiri, kalau tidak kegagalan seperlima pekerjaan lolos sebagai
+        // laporan hijau.
+        val takTerjemah = (balonDiminta - balonTerjawab).coerceAtLeast(0)
+        result.balonTakTerjemah = takTerjemah
+        if (takTerjemah > 0) {
+            log("[!] $takTerjemah dari $balonDiminta balon TIDAK diterjemahkan " +
+                "dan tetap memakai teks aslinya.")
+            log("    Jalankan ulang berkas yang sama untuk melengkapinya; " +
+                "balon yang sudah jadi diambil dari cache, tidak ditagih lagi.")
         }
         if (cfg.arahBacaOtomatis && (hitungRtl + hitungLtr) > 0) {
             log("[Arah baca] $hitungRtl halaman kanan-ke-kiri, $hitungLtr kiri-ke-kanan.")
@@ -861,6 +898,7 @@ class Pipeline(
 
         if (sisaPending.isNotEmpty() && !cancelled) {
             val maxPer = cfg.maxBubblesPerRequest
+            balonDiminta += sisaPending.size
             val chunks = sisaPending.chunked(maxPer)
             log("[Multi-Page Batch] Stitching ${sisaPending.size} bubble(s) into ${chunks.size} " +
                 "mosaic request(s) (max $maxPer bubbles/request)...")
@@ -1328,6 +1366,7 @@ class Pipeline(
             units.getOrNull(pc.unitIdx)?.parts?.getOrNull(pc.partIdx)
                 ?.translations?.put(pc.boxIdx.toString(), text)
             simpanKeCache(pc, provider, lang, text)
+            balonTerjawab++
         }
 
         // Catat ke riwayat, dikelompokkan per halaman sumber: satu

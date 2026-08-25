@@ -30,6 +30,16 @@ class TinyHttpServer {
     @Volatile var lastRequestLine: String = ""
     val lastHeaders = HashMap<String, String>()
 
+    /**
+     * Dipanggil SESUDAH balasan terkirim, membawa body permintaan.
+     *
+     * Gunanya menguji urutan balasan yang berbeda-beda - misalnya JSON cacat
+     * pada permintaan pertama lalu JSON sehat pada percobaan ulang. Dijalankan
+     * setelah pengiriman supaya responseBody yang dipasang di dalamnya berlaku
+     * untuk permintaan BERIKUTNYA, bukan yang sedang dilayani.
+     */
+    @Volatile var onRequest: ((String) -> Unit)? = null
+
     private var worker: Thread? = null
 
     fun start() {
@@ -87,6 +97,8 @@ class TinyHttpServer {
         )
         out.write(payload)
         out.flush()
+
+        onRequest?.invoke(lastBody)
     }
 
     /** Path + query of the most recent request line, e.g. "/v1/x?key=abc". */
