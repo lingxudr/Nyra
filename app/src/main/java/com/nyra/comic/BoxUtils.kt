@@ -1,8 +1,29 @@
 package com.nyra.comic
 
 import android.graphics.Bitmap
+import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.min
+
+/**
+ * Hasil penguraian satu balasan terjemahan model, dipilah per golongan nomor.
+ *
+ * Ini dipakai [kerjakanChunk] untuk memutuskan siapa yang harus diminta ulang
+ * dan MENGAPA seorang nomor belum terjawab. Dua golongan itu sifatnya beda:
+ *
+ *  - [jawaban]   — nomor yang model balas dengan teks sah (termasuk `SKIP`).
+ *  - [kosong]    — nomor yang model CANTUMKAN tetapi nilainya hampa
+ *    (`null`/`undefined`/string kosong). Artinya model memang "melihat" nomor
+ *    itu namun mengaku tidak bisa membacanya.
+ *
+ * Nomor yang benar-benar tidak ada di balasan (tidak di [jawaban] maupun
+ * [kosong]) dihitung seniri oleh pemanggil: `idMapping - jawaban.keys -
+ * kosong`. Ia golongan ketiga yang diam-diam: model tidak mencantumkannya.
+ */
+class HasilTerjemahan(
+    val jawaban: Map<String, String>,
+    val kosong: Set<String>
+)
 
 /**
  * Port of the box-filtering half of cypy/core/services/image_service.py.
@@ -338,6 +359,106 @@ object BoxUtils {
         }
         return intArrayOf(cx1, cy1, cx2, cy2)
     }
+    /**
+     * Nilai terjemahan yang sah untuk dipakai, atau null bila model sebenarnya
+     * TIDAK menjawab nomor itu.
+     *
+     * Model vision kadang membalas sebuah ID dengan string kosong, spasi saja,
+     * atau literal `null`/`undefined` — semuanya menandakan ia tidak menemukan
+     * teks atau melewatkan balon itu. Menaruh nilai begitu ke peta jawaban akan
+     * membuat balon dibiarkan berbahasa asli TANPA ada yang mencoba ulang:
+     * drawText menolak teks kosong, tapi kerjakanChunk sudah menganggap nomor
+     * itu "dijawab" sehingga tidak masuk daftar `hilang`. Di sini nilai hampa
+     * dinormalkan jadi null, sehingga nomornya diperlakukan sebagai tidak
+     * terjawab dan diminta ulang (atau dicatat sebagai balon yang dilewati).
+     *
+     * `SKIP` memang nilai sah — jangan dibuang. Juga tidak boleh diubah oleh
+     * [siapkanNilai]: drawText memakai perbandingan huruf besar `"SKIP"`.
+     */
+    fun siapkanNilai(t: String): String? {
+        val v = t.trim()
+        if (v.isEmpty()) return null
+        val u = v.uppercase()
+        if (u == "NULL" || u == "UNDEFINED") return null
+        return v
+    }
+
+    /**
+     * Bersihkan nilai terjemahan sebelum digambar.
+     *
+     * Model vision, di satu sisi, sering membungkus ulang hasilnya atau
+     * melempar entitas HTML (sisa penerjemahan yang di-render lewat browser),
+     * dan di sisi lain kadang membalas `null`/`<p>...</p>`/kutip luar yang
+     * tidak pernah diminta. Nilai seperti itu kalau digambar apa adanya akan
+     * tampak sebagai `null`, tag `&lt;p&gt;`, atau kutip ganda yang mengambang
+     * — jelas rusak. Fungsi ini menormalkan artefak lazim itu sehingga piksel
+     * balon berisi teks terjemahan yang sebenarnya, bukan sampah pembungkus.
+     *
+     * Aman untuk nilai normal: tanpa `&`, tanpa kurung kutip kembar, tanpa
+     * null literal, hasilnya identik dengan masukannya.
+     */
+    fun normalisasiTerjemahan(t: String): String {
+        var s = t.trim()
+        if (s.isEmpty()) return s
+        val u = s.uppercase()
+        if (u == "NULL" || u == "UNDEFINED" || u == "NONE" || u == "N/A") return ""
+        if ('&' in s) s = htmlDecode(s)
+        // Pasangan kutip luar yang tersisa karena model membungkus ulang.
+        // Hanya dilepas ketika kutip pembuka/penutup itu merupakan satu-satunya
+        // pasangan di seluruh nilai — kalau ada kutip di dalam, biarkan agar
+        // isi dialog bergaya petik tidak rusak.
+        if (s.length >= 2) {
+            val a = s.first()
+            val b = s.last()
+            val kutip = (a == '"' && b == '"') || (a == '\u201C' && b == '\u201D') ||
+                (a == '\u2018' && b == '\u2019')
+            if (kutip) {
+                val jumlah = s.count { it == a || it == b }
+                val dalam = s.substring(1, s.length - 1).trim()
+                if (jumlah <= 2 && dalam.isNotEmpty()) s = dalam
+            }
+        }
+        // Ratakan deretan spasi/tab/baris baru/spasi khusus (termasuk &nbsp;
+        // hasil dekode dan ideografik \u3000 dari bahasa sasaran). Layout
+        // membungkus ulang teks, jadi spasi ganda hanya membuat balon tampak
+        // renggang; satu spasi cukup.
+        s = s.replace(Regex("[ \t\n\r\u00A0\u3000]+"), " ").trim()
+        s = normalisasiPlaceholder(s)
+        return s.trim()
+    }
+
+    /**
+     * Samakan beragam bentuk penanda "bagian yang tak terbaca" menjadi `[?]`.
+     *
+     * Model vision kadang menulis `[ ? ]` alih-alih `[?]` yang diminta prompt.
+     * Bentuk kurung kotak yang isinya hanya tanda tanya (boleh berspasi)
+     * dinormalkan. Bentuk `(?)` sengaja TIDAK dipetakan — itu bisa teks
+     * sungguhan, dan hanya penanda kurung kotak yang jelas dianggap marker.
+     */
+    private fun normalisasiPlaceholder(s: String): String {
+        return s.replace(Regex("\\[\\s*\\?\\s*\\]"), "[?]")
+    }
+
+    /** Dekode entitas HTML yang lazim muncul dalam balasan LLM. */
+    private fun htmlDecode(s: String): String {
+        var r = s
+        r = r.replace("&amp;", "&")
+        r = r.replace("&lt;", "<")
+        r = r.replace("&gt;", ">")
+        r = r.replace("&quot;", "\"")
+        r = r.replace("&#39;", "'")
+        r = r.replace("&apos;", "'")
+        r = r.replace("&nbsp;", " ")
+        r = Regex("&#([0-9]{1,7});").replace(r) { m ->
+            val cp = m.groupValues[1].toIntOrNull() ?: return@replace m.value
+            if (cp in 0..0x10FFFF) String(Character.toChars(cp)) else m.value
+        }
+        r = Regex("&#[xX]([0-9A-Fa-f]{1,6});").replace(r) { m ->
+            val cp = m.groupValues[1].toIntOrNull(16) ?: return@replace m.value
+            if (cp in 0..0x10FFFF) String(Character.toChars(cp)) else m.value
+        }
+        return r
+    }
 
     /**
      * Pungut pasangan `"nomor": "teks"` dari balasan yang JSON-nya RUSAK.
@@ -361,13 +482,52 @@ object BoxUtils {
      */
     fun salvageJson(raw: String): Map<String, String> {
         val hasil = LinkedHashMap<String, String>()
-        val re = Regex("\"(\\d{1,4})\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"")
+        // Nilai ter-quote: kunci boleh sampai 8 digit (chunk retry terbesar).
+        val re = Regex("\"(\\d{1,8})\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"")
         for (m in re.findAll(raw)) {
             val key = m.groupValues[1]
             if (hasil.containsKey(key)) continue
-            hasil[key] = unescapeJson(m.groupValues[2])
+            val v = siapkanNilai(normalisasiTerjemahan(unescapeJson(m.groupValues[2])))
+            if (v != null) hasil[key] = v
+        }
+        // Nilai token telanjang `SKIP` / `null` yang muncul ketika JSON-nya
+        // rusak (kutip penutup hilang). Sengaja TIDAK mengizinkan tanda kutip
+        // pembuka: kalau ada kutip, itu nilai ter-quote (mungkin belum tertutup)
+        // dan harus dipungut oleh re — jangan tersangkut sebagai token telanjang
+        // yang hanya mengambil kata pertama dari kalimat itu.
+        val bare = Regex("\"(\\d{1,8})\"\\s*:\\s*([A-Za-z]+)")
+        for (m in bare.findAll(raw)) {
+            val key = m.groupValues[1]
+            if (hasil.containsKey(key)) continue
+            val v = siapkanNilai(normalisasiTerjemahan(m.groupValues[2]))
+            if (v != null) hasil[key] = v
         }
         return hasil
+    }
+
+    /**
+     * Parsé satu balasan terjemahan dan pilah per-golongan nomor.
+     *
+     * Bukan sekadar membuang nilai hampa: nilai `null`/`undefined`/kosong yang
+     * model TULIS untuk sebuah nomor dicatat di [HasilTerjemahan.kosong] agar
+     * pemanggil tahu model itu sebenarnya melihat nomor itu tetapi mengaku tak
+     * bisa membacanya. Nomor yang sama sekali tidak dikirim oleh model bukan
+     * bagian dari [HasilTerjemahan] mana pun — pemanggil menurunkannya sebagai
+     * `id - jawaban.keys - kosong`.
+     *
+     * Karena JSON biasanya terbungkus kalimat/blok kode/teks pengantar, nilai
+     * mentah dilewatkan ke [cleanJson] dulu; kalau itu gagal (pelemparan), ia
+     * diserahkan ke [salvageJson] seperti biasa.
+     */
+    fun parseHasilTerjemahan(raw: String): HasilTerjemahan {
+        val obj = JSONObject(cleanJson(raw))
+        val jawaban = LinkedHashMap<String, String>()
+        val kosong = LinkedHashSet<String>()
+        for (key in obj.keys()) {
+            val nilai = siapkanNilai(normalisasiTerjemahan(obj.optString(key, "")))
+            if (nilai != null) jawaban[key] = nilai else kosong.add(key)
+        }
+        return HasilTerjemahan(jawaban, kosong)
     }
 
     /** Kembalikan escape JSON standar ke karakter aslinya. */
@@ -396,16 +556,136 @@ object BoxUtils {
         return sb.toString()
     }
 
-    /** bersihkan_json_dari_gemini */
+    /**
+     * Persiapkan teks mentah dari model agar bisa di-parse sebagai SATU objek
+     * JSON. Sering model membungkus hasilnya dengan blok kode berlabel apa pun
+     * (`json`, `JSON`, `jsonc`, `javascript`, atau ` ``` ` polos), menambah
+     * kalimat pengantar/penutup yang memuat kurung kurawal, atau menulis koma
+     * gantung — tanpa pembersihan, `JSONObject` melempar dan seluruh request
+     * terlempar ke `salvageJson` padahal JSON-nya sehat.
+     *
+     * Yang dirapikan di sini, urut:
+     *  1. BOM dan spasi tepi.
+     *  2. Objek JSON dipilih dari calon-calon `{...}` seimbang, diuji sebagai
+     *     JSON, dan yang pertama lolos itulah yang dipakai. Karena calon
+     *     dinilai dengan `JSONObject`, blok kode/pengantar/penutup apa pun
+     *     labelnya (bukan hanya `json`) otomatis terbuang, kurung kurawal yang
+     *     kebetulan ada DI DALAM nilai terjemahan (mis. `{...}` di teks) tidak
+     *     memotong objek, dan kotak prosa seperti `{lihat}` di depan objek
+     *     ditolak karena bukan JSON.
+     *  3. Koma gantung sebelum `}`/`]` di luar string dibuang — `JSONObject`
+     *     menolak koma gantung, dan model sangat suka menambahkannya.
+     *
+     * Aman untuk nilai normal: tanpa blok kode, tanpa kurung di dalam string,
+     * tanpa koma gantung, hasilnya identik dengan masukannya.
+     */
     fun cleanJson(raw: String): String {
         var t = raw.trim()
-        if (t.startsWith("```json")) t = t.substring(7).trim()
-        if (t.startsWith("```")) t = t.substring(3).trim()
-        if (t.endsWith("```")) t = t.substring(0, t.length - 3).trim()
-        val start = t.indexOf('{')
-        val end = t.lastIndexOf('}')
-        if (start != -1 && end != -1 && end > start) t = t.substring(start, end + 1)
-        return t.trim()
+        if (t.isEmpty()) return t
+        if (t[0] == '\uFEFF') t = t.substring(1).trim()
+        return pilihObjekJson(t) ?: t
+    }
+
+    /**
+     * Pilih objek JSON yang benar-benar valid di antara calon `{...}`.
+     *
+     * Model gemar menulis kalimat pengantar yang memuat kurung kurawal
+     * (`{lihat}`, `{catatan}`, dsb.) SEBELUM objek JSON yang sesungguhnya.
+     * Pemindai seimbang pada `{` pertama akan memilih kotak prosa itu dan
+     * menolaknya. Di sini tiap `{` dicoba secara berurutan: setiap calon
+     * diambil sebagai objek seimbang, koma gantungnya dibuang, lalu diuji
+     * sebagai JSON. Yang pertama lolos uji itulah yang dipakai — sehingga
+     * prosa yang berisi kurung di depan tidak lagi merampas objek betulan.
+     * Bila tak ada yang lolos, `null` (teks diserahkan ke `salvageJson`).
+     */
+    private fun pilihObjekJson(t: String): String? {
+        var pos = t.indexOf('{')
+        while (pos >= 0) {
+            val span = cariObjekSeimbang(t, pos)
+            if (span != null) {
+                val bersih = buangKomaGantung(span)
+                if (validJson(bersih)) return bersih
+            }
+            pos = t.indexOf('{', pos + 1)
+        }
+        return null
+    }
+
+    /**
+     * Ambil substring objek seimbang `{...}` yang mulai dari `start`,
+     * mengabaikan kurung yang berada di dalam string (beserta escape-nya).
+     * Mengembalikan `null` bila `{` itu tak pernah tertutup.
+     */
+    private fun cariObjekSeimbang(t: String, start: Int): String? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var i = start
+        while (i < t.length) {
+            val c = t[i]
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    c == '\\' -> escaped = true
+                    c == '"' -> inString = false
+                }
+            } else {
+                when (c) {
+                    '"' -> inString = true
+                    '{' -> depth++
+                    '}' -> {
+                        depth--
+                        if (depth == 0) return t.substring(start, i + 1)
+                    }
+                }
+            }
+            i++
+        }
+        return null
+    }
+
+    /** True bila `s` bisa di-parse sebagai satu objek JSON. */
+    private fun validJson(s: String): Boolean =
+        try { JSONObject(s); true } catch (e: Exception) { false }
+
+    /**
+     * Buang koma gantung: `,` yang langsung diikuti (setelah spasi) oleh `}`
+     * atau `]` DI LUAR string. `JSONObject` menolak koma gantung, dan model
+     * vision sering menulis `"1": "x", "2": "y", }`.
+     */
+    private fun buangKomaGantung(s: String): String {
+        val sb = StringBuilder(s.length)
+        var inString = false
+        var escaped = false
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            if (inString) {
+                sb.append(c)
+                when {
+                    escaped -> escaped = false
+                    c == '\\' -> escaped = true
+                    c == '"' -> inString = false
+                }
+                i++
+                continue
+            }
+            when (c) {
+                '"' -> { inString = true; sb.append(c) }
+                ',' -> {
+                    var j = i + 1
+                    while (j < s.length && s[j].isWhitespace()) j++
+                    if (j < s.length && (s[j] == '}' || s[j] == ']')) {
+                        // koma gantung — buang
+                    } else {
+                        sb.append(c)
+                    }
+                }
+                else -> sb.append(c)
+            }
+            i++
+        }
+        return sb.toString()
     }
 
     /**

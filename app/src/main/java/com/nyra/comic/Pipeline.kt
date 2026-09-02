@@ -1286,16 +1286,16 @@ class Pipeline(
         }
 
         log("  [Request ${cIdx + 1}/$totalChunk] Translating $jumlahPotongan bubbles with ${provider.providerName}...")
-        val translations = translateMosaic(mosaic, provider, lang, rujukan)
+        val hasil = translateMosaic(mosaic, provider, lang, rujukan)
         mosaic.recycle()
 
-        if (translations.isEmpty() && cancelled) {
+        if (hasil.jawaban.isEmpty() && cancelled) {
             // rujukan TIDAK di-recycle: bitmapnya milik cacheRujukan dan masih
             // dipakai chunk lain dari halaman yang sama.
             log("  [!] Request ${cIdx + 1} stopped before it returned.")
             return null
         }
-        if (translations.isEmpty()) {
+        if (hasil.jawaban.isEmpty()) {
             // Balasan kosong total dulu berarti menyerah seketika: seluruh
             // chunk (sampai 30 balon) dibiarkan berbahasa asli walau
             // potongannya sudah dibuat dan tokennya sudah terbakar. Jalur
@@ -1305,7 +1305,7 @@ class Pipeline(
             log("  [!] Request ${cIdx + 1} tidak dijawab " +
                 "($jumlahPotongan balon) — mencoba ulang sekali.")
         }
-        val diterima = HashMap<String, String>(translations)
+        val diterima = HashMap<String, String>(hasil.jawaban)
 
         // Model kadang membalas hanya sebagian nomor. Dulu sisanya
         // dibiarkan dalam bahasa asli tanpa penjelasan, padahal
@@ -1314,9 +1314,14 @@ class Pipeline(
         val hilang = idMapping.keys.filter { it !in diterima }
         if (hilang.isNotEmpty() && !cancelled) {
             log("  [!] ${hilang.size} nomor tidak dijawab model, meminta ulang...")
-            val ulang = hilang.mapNotNull { id ->
-                idMapping[id]?.let { id to it }
-            }
+            // Pisahkan alasan tiap nomor agar percobaan ulang disesuaikan:
+            //  - model MENCANTUMKAN nomor itu tapi balas null/hampa (kosong)
+            //    → ia mengaku tak bisa membacanya.
+            //  - model sama sekali tidak menuliskan nomor itu (nomin) → sering
+            //    hanya kendala penomoran/kelelahan; lebih mudah diselamatkan.
+            val dianggapTakTerbaca = hilang.filter { it in hasil.kosong }
+            val diomiti = hilang.filter { it !in hasil.kosong }
+            val ulang = diomiti.mapNotNull { id -> idMapping[id]?.let { id to it } }
             // Percobaan ulang dipecah menjadi kelompok kecil.
             //
             // Balasan yang hilang seluruhnya hampir selalu berarti mosaiknya
@@ -1332,15 +1337,40 @@ class Pipeline(
                 val ulangMosaic = ulangSusunan.bitmap
                 val tambahan = runCatching {
                     translateMosaic(ulangMosaic, provider, lang, rujukan)
-                }.getOrElse { emptyMap() }
+                }.getOrElse { HasilTerjemahan(emptyMap(), emptySet()) }
                 ulangMosaic.recycle()
-                for ((id, text) in tambahan) {
+                for ((id, text) in tambahan.jawaban) {
                     if (id in idMapping && id !in diterima) diterima[id] = text
                 }
             }
-            val masihHilang = idMapping.keys.count { it !in diterima }
-            if (masihHilang > 0) {
-                log("  [!] $masihHilang balon tetap tidak dijawab setelah diminta ulang.")
+            // Nomor yang model sebut "tak terbaca" dicoba ulang SATU PER SATU.
+            // Potongan tunggal mengisi seluruh kanvas mosaik sehingga teksnya
+            // tampak jauh lebih besar daripada saat tersekat dalam grid 20
+            // potongan — sering itu cukup membuat model akhirnya bisa
+            // membacanya. Golongan ini tidak disentuh oleh kelompok di atas
+            // karena sifat kegagalannya beda.
+            for (id in dianggapTakTerbaca) {
+                if (cancelled) break
+                val pc = idMapping[id] ?: continue
+                val satuSusunan = susunMosaik(listOf(id to pc), numberPaint) ?: continue
+                val satuMosaic = satuSusunan.bitmap
+                val satu = runCatching {
+                    translateMosaic(satuMosaic, provider, lang, rujukan)
+                }.getOrElse { HasilTerjemahan(emptyMap(), emptySet()) }
+                satuMosaic.recycle()
+                for ((k, t) in satu.jawaban) {
+                    if (k in idMapping && k !in diterima) diterima[k] = t
+                }
+            }
+            // Catat alasan yang tertinggal: berapa model sebut tak terbaca dan
+            // berapa yang memang diabaikan. Bukan sekadar angka, supaya
+            // pengguna tahu tiap balon berbahasa asli itu kenapa.
+            val masihHilang = idMapping.keys.filter { it !in diterima }
+            if (masihHilang.isNotEmpty()) {
+                val masihTakTerbaca = masihHilang.count { it in hasil.kosong }
+                val masihDiomiti = masihHilang.size - masihTakTerbaca
+                log("  [!] $masihHilang balon tetap tidak dijawab setelah diminta ulang " +
+                    "($masihTakTerbaca dianggap model tak terbaca, $masihDiomiti nomor diabaikan).")
             } else {
                 log("  [OK] Semua nomor yang tertinggal berhasil dilengkapi.")
             }
@@ -1808,7 +1838,7 @@ class Pipeline(
 
     private fun translateMosaic(
         mosaic: Bitmap, provider: LLMProvider, lang: String, rujukan: Bitmap? = null
-    ): Map<String, String> {
+    ): HasilTerjemahan {
         if (!provider.validateApiKey()) throw ApiKeyException()
         val prompt = buildPrompt(lang, rujukan != null)
 
@@ -1825,16 +1855,17 @@ class Pipeline(
             throw ake
         } catch (ex: Exception) {
             log("  [!] ${provider.providerName} request failed: ${ex.message}")
-            return emptyMap()
-        } ?: return emptyMap()
+            return HasilTerjemahan(emptyMap(), emptySet())
+        } ?: return HasilTerjemahan(emptyMap(), emptySet())
 
         catatPemakaian(provider)
 
         return try {
-            val obj = JSONObject(BoxUtils.cleanJson(raw))
-            val map = LinkedHashMap<String, String>()
-            for (key in obj.keys()) map[key] = obj.optString(key, "")
-            map
+            // Urutan salinan penting: parseHasilTerjemahan memakai cleanJson
+            // untuk memilih objek JSON yang sah, memisahkan nilai yang benar
+            // dari nilai `null`/hampa yang model tulis supaya alasan tiap
+            // nomor yang belum terjawab bisa dilacak.
+            BoxUtils.parseHasilTerjemahan(raw)
         } catch (e: Exception) {
             // JSON rusak bukan alasan membuang seluruh request yang sudah
             // dibayar. Pungut pasangan nomor-teks yang masih utuh; hanya
@@ -1845,7 +1876,7 @@ class Pipeline(
             } else {
                 log("  [!] Could not parse translation JSON: ${e.message}")
             }
-            selamat
+            HasilTerjemahan(selamat, emptySet())
         }
     }
 
@@ -2128,6 +2159,12 @@ class Pipeline(
             append("7. For long sentences, keep all parts of the meaning. Do not truncate. \n")
             append("8. If unsure about some text, use [?] for that part. \n")
             append("9. Reply with 'SKIP' ONLY when the bubble is truly empty, contains no readable characters at all, or is pure background art. A bubble that contains ANY readable text must be translated. \n\n")
+            append("FIDELITY AND REGISTER RULE:\n")
+            append("1. Match the register of the speaker. Keep casual speech casual, polite speech polite, rough speech rough, and formal speech formal. Do NOT standardize every character into one neutral voice. \n")
+            append("2. Preserve the length and punctuation of the utterance: keep the same ellipses, exclamation marks, question marks, and trailing sounds. Do not shorten or pad the line. \n")
+            append("3. Do NOT add quotation marks, honorifics, particles, or filler words that were not present in the original text. \n")
+            append("4. Keep character names, place names, and other proper nouns exactly as written in the original (unless pinned by the glossary). Do not translate or paraphrase them. \n")
+            append("5. Do not translate text that is not actually written in the image, and do not guess a word from context if you cannot read it — use [?] for that part. \n\n")
 
             append("HONORIFICS RULE:\n")
             append("1. If the original text contains Japanese honorifics (san, kun, chan, sama, senpai, sensei, etc.), keep them as-is in the translation. Do NOT translate honorifics. \n")
