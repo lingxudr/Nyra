@@ -70,14 +70,15 @@ class Ronde40Test {
         assertEquals("""Dia bilang "jangan" dua kali.""", hasil["7"])
     }
 
-    /** Escape lain yang lazim muncul di terjemahan. */
+    /** Escape unicode dan garis-miring diurai; baris baru diratakan jadi satu
+     *  spasi karena layout membungkus ulang teks di dalam balon. */
     @Test
     fun `escape baris baru dan unicode diurai`() {
         val raw = """{"1": "baris\nkedua", "2": "garis miring \\ dan \u00e9"}"""
 
         val hasil = BoxUtils.salvageJson(raw)
 
-        assertEquals("baris\nkedua", hasil["1"])
+        assertEquals("baris kedua", hasil["1"])
         assertEquals("garis miring \\ dan é", hasil["2"])
     }
 

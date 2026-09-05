@@ -1,75 +1,59 @@
 <div align="center">
 
-<img src="app/src/main/res/drawable-nodpi/logo_nyra.png" width="140" alt="NYRA">
+<img src="app/src/main/res/drawable-nodpi/logo_nyra.png" width="150" alt="NYRA">
 
-# NYRA — AI Comic Translation
+# NYRA
 
-**Translate. Restore. Read.**
-マンガを、すべての言語へ。
+### 🇯🇵 → 🌍 *Translate. Restore. Read.*
 
-Penerjemah komik otomatis untuk Android. Deteksi balon → terjemah lewat LLM
-vision → bersihkan latar → tulis ulang teks ke dalam balon, mengikuti font,
-warna, dan bentuk aslinya.
+**マンガを、すべての言語へ。**
 
-[![platform](https://img.shields.io/badge/platform-Android%207.0%2B-3DDC84)](#)
-[![language](https://img.shields.io/badge/Kotlin-100%25-7F52FF)](#)
-[![tests](https://img.shields.io/badge/tests-577%20passing-4ADE80)](#verifikasi)
-[![version](https://img.shields.io/badge/release-v2.7.2-7B61FF)](#apk-siap-pasang)
-[![license](https://img.shields.io/badge/license-MIT-blue)](#lisensi)
+[![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#apk-siap-pasang)
+[![Kotlin](https://img.shields.io/badge/Kotlin-100%25-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](#arsitektur-kode)
+[![Tests](https://img.shields.io/badge/679%20tests%20%E2%80%94%200%20FAIL-4ADE80?style=for-the-badge&logo=github)](#verifikasi)
+[![Release](https://img.shields.io/badge/release%20v2.7.5-7B61FF?style=for-the-badge&logo=github)](#apk-siap-pasang)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](#lisensi)
+
+> **Penerjemah komik otomatis untuk Android.** Deteksi balon → terjemah lewat LLM vision →
+> bersihkan latar → tulis ulang teks ke dalam balon, mengikuti **font, warna, dan bentuk aslinya**.
+> Berjalan penuh **on-device** dengan Kotlin + ONNX Runtime.
 
 </div>
 
 ---
 
-## Daftar isi
-
-- [Apa ini](#apa-ini)
-- [Hasil terjemahan sungguhan](#hasil-terjemahan-sungguhan)
-- [APK siap pasang](#apk-siap-pasang)
-- [Cara pakai](#cara-pakai)
-- [Cara kerja pipeline](#cara-kerja-pipeline)
-- [Fitur](#fitur)
-- [Model yang dipakai](#model-yang-dipakai)
-- [Keamanan](#keamanan)
-- [Membangun dari sumber](#membangun-dari-sumber)
-- [Verifikasi](#verifikasi)
-- [Arsitektur kode](#arsitektur-kode)
-- [Riwayat perbaikan](#riwayat-perbaikan)
-- [Batas yang diketahui](#batas-yang-diketahui)
-- [Lisensi](#lisensi)
-
----
-
-## Apa ini
-
-NYRA berawal sebagai port asli-native dari [cypy](https://github.com/indravoyager/cypy)
-(MIT, Python + GUI desktop), dan kini sudah jauh melampauinya: detektor
-tiga-kelas RT-DETR-v2, inpainting LaMa, pengukuran warna balon, kontur balon,
-editor kotak, perpustakaan + pembaca, manajemen model, ekspor CBZ, resume,
-glosarium, cache terjemahan, dan penghitungan biaya token.
-
-**Ini bukan wrapper WebView, bukan mockup, bukan demo.** Seluruh pipeline
-berjalan on-device dengan Kotlin + ONNX Runtime. Satu-satunya yang lewat
-jaringan adalah panggilan terjemahan ke LLM pilihan Anda.
+## 📋 Sekilas
 
 | | |
 |---|---|
-| Bahasa | Kotlin 100 %, satu modul `app` |
-| Inferensi | ONNX Runtime (on-device) |
-| minSdk / targetSdk | 24 (Android 7.0) / 34 |
-| ABI rilis | arm64-v8a (armeabi-v7a & x86_64 bisa dibangun sendiri) |
-| Bahasa sasaran | ID, EN, JP, ZH, ES, PT, JV, KO, RU, TH |
-| Tes | 634 tes / 72 kelas, semua hijau |
+| 🚀 **Umur platform** | Android 7.0+ (`minSdk 24`), `targetSdk 34`, `versionCode 27` |
+| 🧠 **Bahasa** | Kotlin 100 % — satu modul `app`, paket `com.nyra.comic` |
+| ⚙️ **Inferensi** | ONNX Runtime (sepenuhnya on-device) |
+| 📦 **ABI rilis** | `arm64-v8a` · `armeabi-v7a` · `x86_64` (ketiganya dirilis) |
+| 🗣️ **Bahasa sasaran** | ID · EN · JP · ZH · ES · PT · JV · KO · RU · TH |
+| ✅ **Tes** | **679 tes / 77 kelas — semua hijau** |
 
 ---
 
-## Hasil terjemahan sungguhan
+## 🔎 Apa ini
+
+NYRA berawal sebagai port asli-native dari [cypy](https://github.com/indravoyager/cypy)
+(MIT, Python + GUI desktop), dan kini sudah jauh melampauinya: detektor tiga-kelas
+RT-DETR-v2, inpainting LaMa, pengukuran warna balon, kontur balon, editor kotak,
+perpustakaan + pembaca, manajemen model, ekspor CBZ, resume, glosarium, cache
+terjemahan, dan penghitungan biaya token.
+
+> **Ini bukan wrapper WebView, bukan mockup, bukan demo.** Seluruh pipeline berjalan
+> on-device dengan Kotlin + ONNX Runtime. Satu-satunya yang lewat jaringan adalah
+> panggilan terjemahan ke LLM pilihan Anda.
+
+---
+
+## 🔥 Hasil terjemahan sungguhan
 
 Bukan tangkapan layar promosi. Di bawah ini satu halaman utuh
 **SPY × FAMILY Mission 139** yang diproses apa adanya oleh NYRA v2.5.x,
-Jepang → Indonesia, tanpa koreksi manual.
-
-Sepuluh balon terdeteksi, sepuluh diterjemahkan:
+Jepang → Indonesia, tanpa koreksi manual. Sepuluh balon terdeteksi, sepuluh diterjemahkan.
 
 | # | Asli (JP) | Hasil NYRA (ID) |
 |---|---|---|
@@ -86,25 +70,21 @@ Sepuluh balon terdeteksi, sepuluh diterjemahkan:
 
 Yang pantas diperhatikan dari hasil di atas:
 
-- **Furigana tidak ikut terbaca dua kali.** `西国`/`ウェスタリス` dan
-  `黄昏`/`たそがれ` menghasilkan satu kalimat, bukan campuran.
-- **Honorifik dipertahankan.** `先生` tetap menjadi *sensei*, tidak menjadi
-  "guru" atau "dokter".
-- **Nada dijaga.** Balon 4 tetap berupa protes sopan; balon 6 tetap tuntutan.
-- **Urutan baca kanan-ke-kiri ditebak sendiri** dari bentuk blok teks, sehingga
-  balon 1 → 2 → 3 mengalir sebagai satu kalimat yang bersambung antar panel.
-- **Balon 8 hanya berisi erangan** dan tetap diterjemahkan. Ini justru bug yang
-  baru diperbaiki di v2.3.1 — lihat [studi kasus di bawah](#studi-kasus-satu-balon-yang-luput-v231).
+- 🎌 **Furigana tidak ikut terbaca dua kali.** `西国`/`ウェスタリス` dan `黄昏`/`たそがれ` menghasilkan satu kalimat, bukan campuran.
+- 🙇 **Honorifik dipertahankan.** `先生` tetap menjadi *sensei*, tidak menjadi "guru" atau "dokter".
+- 🎭 **Nada dijaga.** Balon 4 tetap berupa protes sopan; balon 6 tetap tuntutan.
+- ➡️ **Urutan baca kanan-ke-kiri ditebak sendiri** dari bentuk blok teks, sehingga balon 1 → 2 → 3 mengalir sebagai satu kalimat yang bersambung antar panel.
+- 💬 **Balon 8 hanya berisi erangan** dan tetap diterjemahkan. Ini justru bug yang baru diperbaiki di v2.3.1 — lihat [studi kasus di bawah](#studi-kasus-satu-balon-yang-luput-v231).
 
-### Studi kasus: satu balon yang luput (v2.3.1)
+### 🧩 Studi kasus: satu balon yang luput (v2.3.1)
 
-Seorang pengguna melaporkan bahwa pada halaman di atas, **sembilan balon
-diterjemahkan dan tepat satu tidak tersentuh**: balon kecil berisi `うぐっ…`.
+Seorang pengguna melaporkan bahwa pada halaman di atas, **sembilan balon diterjemahkan
+dan tepat satu tidak tersentuh**: balon kecil berisi `うぐっ…`.
 
-Diagnosisnya dikerjakan dengan membandingkan piksel keluaran terhadap piksel
-sumber, kotak demi kotak:
+Diagnosisnya dikerjakan dengan membandingkan piksel keluaran terhadap piksel sumber,
+kotak demi kotak:
 
-```
+```text
 bubble  box                        %piksel berubah   status
   #1    [573, 28, 715, 304]          15.5%          OK diterjemahkan
   #2    [20, 37, 169, 314]           15.9%          OK diterjemahkan
@@ -118,34 +98,34 @@ bubble  box                        %piksel berubah   status
   #10   [263, 940, 375, 1168]        18.5%          OK diterjemahkan
 ```
 
-Dugaan pertama — "detektornya gagal" — **salah**. Menjalankan `rtdetr.onnx`
-yang sungguhan atas halaman itu memberi balon tersebut skor **0,893**, jauh di
-atas ambang 0,45, dan kotaknya lolos `sanitize`, `mergeOverlapping`, maupun
-`dropAbsurd`. Kotaknya ada, nomor merahnya tercetak, gambarnya terkirim.
+Dugaan pertama — *"detektornya gagal"* — **salah**. Menjalankan `rtdetr.onnx` yang
+sungguhan atas halaman itu memberi balon tersebut skor **0,893**, jauh di atas ambang
+0,45, dan kotaknya lolos `sanitize`, `mergeOverlapping`, maupun `dropAbsurd`. Kotaknya
+ada, nomor merahnya tercetak, gambarnya terkirim.
 
 Penyebab sebenarnya ada **di dalam prompt kami sendiri**:
 
-```
+```text
 SFX RULE:
 1. If a bubble contains ONLY sound effects (SFX) with no dialogue, reply with 'SKIP'.
 ...
 Example output: {"1": "...", "2": "SKIP", "3": "...", ...}
 ```
 
-`うぐっ…` secara harfiah memang bunyi, jadi model **menuruti instruksi kami**
-dan mengembalikan `SKIP` — diperkuat contoh keluaran yang memasang `SKIP`
-tepat di ID 2. Pipeline lalu bekerja persis seperti seharusnya: `drawText`
-menolak `SKIP`, `sasaranInpaint` juga menolaknya, jadi tidak ada yang dihapus
-dan tidak ada yang digambar. Balonnya utuh dalam bahasa Jepang.
+`うぐっ…` secara harfiah memang bunyi, jadi model **menuruti instruksi kami** dan
+mengembalikan `SKIP` — diperkuat contoh keluaran yang memasang `SKIP` tepat di ID 2.
+Pipeline lalu bekerja persis seperti seharusnya: `drawText` menolak `SKIP`,
+`sasaranInpaint` juga menolaknya, jadi tidak ada yang dihapus dan tidak ada yang
+digambar. Balonnya utuh dalam bahasa Jepang.
 
-Bukti paling telak ada di balon 10: `くっ…` — erangan yang sama persis —
-**berhasil** diterjemahkan menjadi "UGH..." semata-mata karena ia duduk
-bersebelahan dengan dialog di balon yang sama.
+Bukti paling telak ada di balon 10: `くっ…` — erangan yang sama persis — **berhasil**
+diterjemahkan menjadi "UGH..." semata-mata karena ia duduk bersebelahan dengan dialog
+di balon yang sama.
 
-**Perbaikannya** memisahkan suara yang keluar dari mulut tokoh (dialog) dari
-bunyi lingkungan yang digambar sebagai artwork (SFX):
+**Perbaikannya** memisahkan suara yang keluar dari mulut tokoh (dialog) dari bunyi
+lingkungan yang digambar sebagai artwork (SFX):
 
-```
+```text
 SFX AND VOICE RULE:
 1. A sound a CHARACTER MAKES WITH THEIR VOICE is dialogue, not SFX. Always translate it.
 2. This includes groans, gasps, cries, laughs, screams, sighs, grunts, hesitation and stammering.
@@ -156,127 +136,119 @@ SFX AND VOICE RULE:
 
 Contoh keluaran pun tidak lagi mengajarkan `SKIP` untuk erangan.
 
-Pelajarannya dicatat di sini karena mudah terulang: **balon yang tidak
-diterjemahkan belum tentu balon yang tidak terdeteksi.** Verifikasi dulu
-detektornya sebelum mengutak-atik ambang deteksi — kalau tidak, Anda akan
-melonggarkan ambang sampai muncul ratusan kotak palsu demi bug yang sumbernya
-ada di satu baris prompt.
+> 💡 **Pelajarannya:** balon yang tidak diterjemahkan belum tentu balon yang tidak
+> terdeteksi. Verifikasi dulu detektornya sebelum mengutak-atik ambang deteksi — kalau
+> tidak, Anda akan melonggarkan ambang sampai muncul ratusan kotak palsu demi bug yang
+> sumbernya ada di satu baris prompt.
+>
+> Dijaga oleh `VocalSfxTest` (6 tes). Mengembalikan aturan lama membuat tepat 3 tes
+> gagal — jadi tes ini benar-benar mengikat, bukan hiasan.
 
-Dijaga oleh `VocalSfxTest` (6 tes). Mengembalikan aturan lama membuat tepat
-3 tes gagal — jadi tes ini benar-benar mengikat, bukan hiasan.
+### 🚫 Teks yang sengaja TIDAK disentuh
 
-### Teks yang sengaja TIDAK disentuh
-
-Pada halaman yang sama ada tulisan tegak `辿り着くこと、叶わず` yang menyatu
-dengan artwork di tengah panel, dan logo `MISSION:139 前編`. Keduanya memang
-dibiarkan utuh: keduanya bukan balon, melainkan bagian dari gambar. Menghapus
-dan menimpanya berarti merusak artwork. Perilaku ini disengaja — lihat
-[kontrak hapus-dan-gambar](#kontrak-hapus-dan-gambar).
+Pada halaman yang sama ada tulisan tegak `辿り着くこと、叶わず` yang menyatu dengan artwork
+di tengah panel, dan logo `MISSION:139 前編`. Keduanya memang dibiarkan utuh: keduanya
+bukan balon, melainkan bagian dari gambar. Menghapus dan menimpanya berarti merusak
+artwork. Perilaku ini disengaja — lihat [kontrak hapus-dan-gambar](#kontrak-hapus-dan-gambar).
 
 ---
 
-## APK siap pasang
+## 📲 APK siap pasang
 
 | Berkas | ABI | Ukuran |
 |---|---|---|
-| `nyra-2.7.2-arm64-v8a.apk` | arm64-v8a | 53.529.788 B |
-| `nyra-2.7.2-armeabi-v7a.apk` | armeabi-v7a | 48.118.556 B |
-| `nyra-2.7.2-x86_64.apk` | x86_64 | 56.280.590 B |
+| `nyra-2.7.5-arm64-v8a.apk` | `arm64-v8a` | 21.713.428 B |
+| `nyra-2.7.5-armeabi-v7a.apk` | `armeabi-v7a` | 16.302.196 B |
+| `nyra-2.7.5-x86_64.apk` | `x86_64` | 24.464.230 B |
 
-Pilih **arm64-v8a** untuk hampir semua ponsel Android sejak 2016; armeabi-v7a
-hanya untuk perangkat 32-bit lama, dan x86_64 untuk emulator.
+Pilih **arm64-v8a** untuk hampir semua ponsel Android sejak 2016; **armeabi-v7a** untuk
+perangkat 32-bit lama, dan **x86_64** untuk emulator.
 
-SHA-256 sengaja **tidak** dicantumkan di sini. Blok tanda tangan APK memuat
-stempel waktu, sehingga dua build dari commit yang sama persis menghasilkan
-ringkasan yang berbeda meski ukuran, sertifikat, dan isinya identik —
-angka yang ditulis di README akan menyesatkan begitu APK dibangun ulang.
-Ringkasan yang mengikat adalah yang tertera pada **GitHub Release** untuk
-tag terkait; verifikasi berkas unduhan Anda terhadap angka di halaman itu.
+> 🔐 **Kenapa SHA-256 tidak dicantumkan di sini?** Blok tanda tangan APK memuat stempel
+> waktu, sehingga dua build dari commit yang sama persis menghasilkan ringkasan yang
+> berbeda meski ukuran, sertifikat, dan isinya identik — angka yang ditulis di README
+> akan menyesatkan begitu APK dibangun ulang. Ringkasan yang mengikat adalah yang
+> tertera pada **GitHub Release** untuk tag terkait; verifikasi berkas unduhan Anda
+> terhadap angka di halaman itu. Yang tetap dan bisa diperiksa kapan pun adalah
+> **sertifikat penerbitnya** (lihat di bawah): APK NYRA yang sah selalu ditandatangani
+> kunci yang sama.
 
-Yang tetap dan bisa diperiksa kapan pun adalah **sertifikat penerbitnya**
-(lihat di bawah): APK NYRA yang sah selalu ditandatangani kunci yang sama.
+> ⚖️ APK berukuran 16–24 MB dan **tidak disimpan di dalam repo** (`apk/` masuk
+> `.gitignore`) agar riwayat git tetap ringan. Unggah berkasnya sebagai **GitHub
+> Release**, atau bangun sendiri dengan `./gradlew assembleRelease`.
 
-> APK berukuran 48-56 MB dan **tidak disimpan di dalam repo** (`apk/` masuk
-> `.gitignore`) agar riwayat git tetap ringan. Unggah berkasnya sebagai
-> **GitHub Release**, atau bangun sendiri dengan `./gradlew assembleRelease`.
+Ditandatangani **APK Signature Scheme v2, RSA-4096**:
 
-Ditandatangani APK Signature Scheme v2, RSA-4096:
-
-```
+```text
 CN=NYRA, OU=AI Comic Translation, O=NYRA, L=Karawang, ST=West Java, C=ID
 SHA-256: bd59a5e08b3eaa201e730d06eceaaf01d5d21baf6f354ae7e7b78f2384784f87
 ```
 
-`minSdk 24` (Android 7.0), `targetSdk 34`, versionCode 21. Kode diperkecil dan
+`minSdk 24` (Android 7.0), `targetSdk 34`, `versionCode 27`. Kode diperkecil dan
 diaburkan R8 (`isMinifyEnabled = true`).
 
-Verifikasi sebelum memasang:
+**Verifikasi sebelum memasang:**
 
 ```bash
 # Cocokkan dengan ringkasan yang tertera di halaman GitHub Release:
-sha256sum nyra-2.7.2-arm64-v8a.apk
+sha256sum nyra-2.7.5-arm64-v8a.apk
 
 # Pemeriksaan yang paling menentukan - sertifikat harus persis seperti di atas:
-apksigner verify --print-certs nyra-2.7.2-arm64-v8a.apk
+apksigner verify --print-certs nyra-2.7.5-arm64-v8a.apk
 ```
 
 ---
 
-## Cara pakai
+## 🚀 Cara pakai
 
-1. **Pasang APK**, izinkan "Install unknown apps" bila diminta.
-2. **Isi API key.** Setelan → pilih penyedia (Gemini / OpenAI / OpenRouter /
-   custom OpenAI-compatible) → tempel API key. Key disimpan terenkripsi
-   (AES-GCM, Android Keystore).
+1. **Pasang APK** — izinkan *"Install unknown apps"* bila diminta.
+2. **Isi API key.** Setelan → pilih penyedia (Gemini / OpenAI / OpenRouter / custom OpenAI-compatible) → tempel API key. Key disimpan terenkripsi (**AES-GCM, Android Keystore**).
 3. **Pilih masukan.** Gambar lepas, folder, ZIP/CBZ/CBR, PDF, atau EPUB.
 4. **Pilih bahasa sasaran** dan folder keluaran.
-5. **Jalankan.** Progres tampil per halaman; proses bisa dibatalkan dan
-   dilanjutkan nanti dari titik terakhir.
-6. **Koreksi bila perlu.** Perpustakaan → pilih bab → Editor untuk menggeser
-   kotak atau menyunting teks, atau Pembaca untuk membaca hasilnya.
+5. **Jalankan.** Progres tampil per halaman; proses bisa dibatalkan dan dilanjutkan nanti dari titik terakhir.
+6. **Koreksi bila perlu.** Perpustakaan → pilih bab → Editor untuk menggeser kotak atau menyunting teks, atau Pembaca untuk membaca hasilnya.
 
-Model inpaint LaMa (93 MB) bersifat opsional dan diunduh terpisah lewat
-Setelan → Model. Tanpa model itu, latar balon diisi putih polos.
+Model inpaint **LaMa** (93 MB) bersifat opsional dan diunduh terpisah lewat Setelan →
+Model. Tanpa model itu, latar balon diisi putih polos.
 
 ---
 
-## Cara kerja pipeline
+## ⚙️ Cara kerja pipeline
 
+```mermaid
+flowchart TD
+    A["📥 Masukan<br/>gambar / ZIP / CBZ / CBR / PDF / EPUB"]
+    A --> B1
+    B1["1️⃣ Deteksi<br/>RT-DETR-v2 3 kelas: bubble, text_bubble, text_free<br/>fallback YOLOv8 1 kelas bila model tidak ada"]
+    B2["2️⃣ Arah baca<br/>ditebak per halaman dari bentuk blok teks + rasio"]
+    B3["3️⃣ Warna<br/>latar & huruf tiap balon diukur (balon gelap aman)"]
+    B4["4️⃣ Mosaik<br/>≤20 balon per gambar, tiap balon diberi nomor merah"]
+    B5["5️⃣ Terjemah<br/>1 panggilan LLM vision per mosaik → JSON {id: teks}<br/>cache piksel menghindari bayar dua kali"]
+    B6["6️⃣ Bersihkan<br/>LaMa untuk teks lepas, isi-putih untuk isi balon"]
+    B7["7️⃣ Render<br/>teks ditulis ulang mengikuti kontur balon, font & warna"]
+    B1 --> B2 --> B3 --> B4 --> B5 --> B6 --> B7
+    B7 --> C["📤 Keluaran PNG per halaman → opsional CBZ"]
 ```
- masukan (gambar / ZIP / CBZ / CBR / PDF / EPUB)
-   │
-   ├─ 1. Deteksi        RT-DETR-v2 tiga kelas: bubble, text_bubble, text_free
-   │                    fallback YOLOv8 satu kelas bila model tidak ada
-   ├─ 2. Arah baca      ditebak per halaman dari bentuk blok teks + rasio
-   ├─ 3. Warna          latar & huruf tiap balon diukur (balon gelap aman)
-   ├─ 4. Mosaik         ≤20 balon per gambar, tiap balon diberi nomor merah
-   ├─ 5. Terjemah       satu panggilan LLM vision per mosaik → JSON {id: teks}
-   │                    cache piksel menghindari bayar dua kali
-   ├─ 6. Bersihkan      LaMa untuk teks lepas, isi-putih untuk isi balon
-   └─ 7. Render         teks ditulis ulang mengikuti kontur balon, font & warna
-   │
- keluaran PNG per halaman → opsional CBZ
-```
 
-Kunci desainnya: **satu panggilan jaringan per mosaik**, bukan per balon.
-Halaman 10 balon = 1 permintaan, bukan 10.
+> 💡 **Kunci desainnya:** **satu panggilan jaringan per mosaik**, bukan per balon.
+> Halaman 10 balon = 1 permintaan, bukan 10.
 
-### Kontrak hapus-dan-gambar
+### 🧱 Kontrak hapus-dan-gambar
 
 Aturan yang mengikat seluruh pipeline:
 
 > **Hapus sesuatu hanya kalau kita memang berniat menggambar penggantinya.**
 
 `sasaranInpaint` dan `drawText` wajib memakai predikat bentuk yang sama persis
-(`bentukDitolak`). Dulu hanya `drawText` yang memakainya sementara inpaint
-menghapus semua teks lepas tanpa saring — hasilnya bercak buram di atas artwork
-tanpa teks apa pun di atasnya. Teks kosong dan `SKIP` juga ditolak keduanya.
+(`bentukDitolak`). Dulu hanya `drawText` yang memakainya sementara inpaint menghapus
+semua teks lepas tanpa saring — hasilnya bercak buram di atas artwork tanpa teks apa
+pun di atasnya. Teks kosong dan `SKIP` juga ditolak keduanya.
 
 ---
 
-## Fitur
+## ✨ Fitur
 
-### Terjemahan
+### 🌐 Terjemahan
 
 | Fitur | Ringkas |
 |---|---|
@@ -289,7 +261,7 @@ tanpa teks apa pun di atasnya. Teks kosong dan `SKIP` juga ditolak keduanya.
 | **Hitung biaya** | Token masuk/keluar dan estimasi biaya USD + rupiah, per model. |
 | **Arah baca otomatis** | Manga kanan-ke-kiri vs manhwa/komik Barat kiri-ke-kanan, ditebak per halaman. |
 
-### Gambar
+### 🎨 Gambar
 
 | Fitur | Ringkas |
 |---|---|
@@ -300,7 +272,7 @@ tanpa teks apa pun di atasnya. Teks kosong dan `SKIP` juga ditolak keduanya.
 | **Paket font** | Komika (Latin), Kosugi (JP), Noto KR/SC/Thai untuk sasaran non-Latin. |
 | **Teks tegak** | Penulisan vertikal untuk sasaran Jepang/Mandarin. |
 
-### Alur kerja
+### 🗂️ Alur kerja
 
 | Fitur | Ringkas |
 |---|---|
@@ -316,7 +288,7 @@ tanpa teks apa pun di atasnya. Teks kosong dan `SKIP` juga ditolak keduanya.
 
 ---
 
-## Model yang dipakai
+## 🧠 Model yang dipakai
 
 | Model | Berkas | Ukuran | Lisensi | Sumber |
 |---|---|---|---|---|
@@ -325,48 +297,39 @@ tanpa teks apa pun di atasnya. Teks kosong dan `SKIP` juga ditolak keduanya.
 | Detektor balon lama | `eyecypy.onnx` | 12,3 MB | MIT | cypy (YOLOv8, 1 kelas) |
 | Inpaint | `lama.onnx` | 92,6 MB | — | [opencv/inpainting_lama](https://huggingface.co/opencv/inpainting_lama) — **diunduh terpisah**, tidak dibundel |
 
-Tiga model pertama dibundel di dalam APK. LaMa diunduh atas permintaan dan
-diverifikasi SHA-256 `7df918ac…cf74fdf2` sebelum dipakai.
+Tiga model pertama dibundel di dalam APK. LaMa diunduh atas permintaan dan diverifikasi
+SHA-256 `7df918ac…cf74fdf2` sebelum dipakai.
 
-**Catatan lisensi yang disengaja:** bobot segmentasi balon berbasis YOLO-seg
-umumnya turunan Ultralytics dan **AGPL-3.0**, yang akan menular ke APK yang
-didistribusikan. Karena itu NYRA sama sekali tidak memakai YOLO-seg; kontur
-balon diturunkan dari kotak RT-DETR yang Apache-2.0.
+> ⚠️ **Catatan lisensi yang disengaja.** Bobot segmentasi balon berbasis YOLO-seg umumnya
+> turunan Ultralytics dan **AGPL-3.0**, yang akan menular ke APK yang didistribusikan.
+> Karena itu NYRA sama sekali tidak memakai YOLO-seg; kontur balon diturunkan dari kotak
+> RT-DETR yang Apache-2.0.
 
-### Catatan model Gemini
+### ⚡ Catatan model Gemini
 
-Nama model Gemini berubah cukup sering dan yang lama dimatikan. NYRA memakai
-rantai fallback `gemini-flash-latest` → `gemini-3.6-flash` →
-`gemini-flash-lite-latest`. Model yang sudah pensiun dan akan menghasilkan 404:
-`gemini-2.0-*`, `gemini-1.5-*`, `gemini-pro*`, `gemini-2.5-flash*`.
+Nama model Gemini berubah cukup sering dan yang lama dimatikan. NYRA memakai rantai
+fallback `gemini-flash-latest` → `gemini-3.6-flash` → `gemini-flash-lite-latest`.
+Model yang sudah pensiun dan akan menghasilkan 404: `gemini-2.0-*`, `gemini-1.5-*`,
+`gemini-pro*`, `gemini-2.5-flash*`.
 
-Pembatas laju: jarak antar permintaan ≥2,0 detik, backoff 429 `5×2^percobaan`,
-maksimum 6 percobaan.
-
----
-
-## Keamanan
-
-- **API key terenkripsi.** AES-GCM lewat Android Keystore (alias
-  `nyra_api_key_v1`). Nilai lama yang belum terenkripsi ditandai `raw1:` dan
-  dimigrasikan otomatis menjadi `enc1:`.
-- **Glosarium adalah data, bukan perintah.** Isi glosarium dipagari
-  `--- BEGIN/END GLOSSARY DATA ---`, dan karakter kontrol / bidi / zero-width
-  dibuang. JSON glosarium adalah vektor injeksi prompt yang sungguhan, dan
-  diperlakukan begitu.
-- **Verifikasi unduhan.** Model yang diunduh di-hash streaming (tidak pernah
-  `readBytes()` berkas 93 MB) dan ditolak bila SHA-256 tidak cocok. Unduhan
-  separuh disimpan `.part` dan dilanjutkan lewat HTTP Range.
-- **Kunci penanda tangan tidak ada di repo.** `*.jks` dan
-  `keystore.properties` masuk `.gitignore`.
-- **Cleartext dimatikan** kecuali untuk endpoint custom yang Anda tentukan
-  sendiri (`network_security_config.xml`).
+Pembatas laju: jarak antar permintaan ≥2,0 detik, backoff 429 `5×2^percobaan`, maksimum
+6 percobaan.
 
 ---
 
-## Membangun dari sumber
+## 🔒 Keamanan
 
-Prasyarat: JDK 17, Android SDK (platform 34, build-tools 34.0.0).
+- 🔐 **API key terenkripsi.** AES-GCM lewat Android Keystore (alias `nyra_api_key_v1`). Nilai lama yang belum terenkripsi ditandai `raw1:` dan dimigrasikan otomatis menjadi `enc1:`.
+- 🧪 **Glosarium adalah data, bukan perintah.** Isi glosarium dipagari `--- BEGIN/END GLOSSARY DATA ---`, dan karakter kontrol / bidi / zero-width dibuang. JSON glosarium adalah vektor injeksi prompt yang sungguhan, dan diperlakukan begitu.
+- 📦 **Verifikasi unduhan.** Model yang diunduh di-hash streaming (tidak pernah `readBytes()` berkas 93 MB) dan ditolak bila SHA-256 tidak cocok. Unduhan separuh disimpan `.part` dan dilanjutkan lewat HTTP Range.
+- 🔑 **Kunci penanda tangan tidak ada di repo.** `*.jks` dan `keystore.properties` masuk `.gitignore`.
+- 🛡️ **Cleartext dimatikan** kecuali untuk endpoint custom yang Anda tentukan sendiri (`network_security_config.xml`).
+
+---
+
+## 🛠️ Membangun dari sumber
+
+Prasyarat: **JDK 17**, **Android SDK** (platform 34, build-tools 34.0.0).
 
 ```bash
 git clone https://github.com/lingxudr/Nyra.git
@@ -379,10 +342,10 @@ echo "sdk.dir=/path/ke/android-sdk" > local.properties
 ./gradlew assembleRelease
 ```
 
-Model dan font **tidak** disimpan di repo (ukuran). Tanpa keduanya, kode tetap
+Model dan font **tidak** disimpan di repo (karena ukuran). Tanpa keduanya, kode tetap
 terkompilasi tetapi ±42 tes akan gagal dengan `FileNotFoundException`.
 
-### Menandatangani dengan kunci sendiri
+### 🔏 Menandatangani dengan kunci sendiri
 
 ```bash
 keytool -genkeypair -v -keystore nyra-release.jks \
@@ -396,42 +359,32 @@ keyPassword=...
 EOF
 ```
 
-Keduanya sudah masuk `.gitignore`. Bila `keystore.properties` tidak ada, build
-rilis jatuh ke debug-signing secara otomatis.
+Keduanya sudah masuk `.gitignore`. Bila `keystore.properties` tidak ada, build rilis
+jatuh ke debug-signing secara otomatis.
 
-> Di `.gradle.kts`, `java.util.Properties` tidak ikut ter-*resolve* sendiri —
-> `import java.util.Properties` dan `import java.io.FileInputStream` di
-> tingkat atas berkas wajib ada.
+> ℹ️ Di `.gradle.kts`, `java.util.Properties` tidak ikut ter-*resolve* sendiri —
+> `import java.util.Properties` dan `import java.io.FileInputStream` di tingkat atas
+> berkas wajib ada.
 
 ---
 
-## Verifikasi
+## ✅ Verifikasi
 
 ```bash
 ./gradlew testReleaseUnitTest
 ```
 
-**634 tes / 72 kelas / 0 gagal.**
+**679 tes / 77 kelas / 0 gagal.**
 
-Tes di sini sengaja diperlakukan sebagai bukti, bukan formalitas. Aturan yang
-dipegang:
+Tes di sini sengaja diperlakukan sebagai **bukti, bukan formalitas**. Aturan yang dipegang:
 
-- **Tes fitur harus menyalakan sakelar fiturnya.** Tes pipeline yang lupa
-  mengaktifkan fitur akan hijau tanpa pernah menyentuh kode yang diuji.
-- **Tes piksel Robolectric wajib `@GraphicsMode(NATIVE)`**, kalau tidak ia
-  lulus secara hampa.
-- **`android.graphics.Color.red/green/blue` mengembalikan 0** di unit test JVM
-  biasa. Semua matematika piksel memakai geseran bit, di produksi maupun di
-  fixture.
-- **Uji mutasi.** Setiap perbaikan penting dibalik sekali untuk memastikan
-  tesnya memang gagal. Contoh: mengembalikan aturan SFX lama → tepat 3 tes
-  `VocalSfxTest` gagal; melepas penjaga `milikSendiri` → tepat 2 tes
-  `ReaderLayerTest` gagal; memaksa `verifikasi` selalu lulus → tepat 2 tes
-  `ModelManagerTest` gagal.
-- **Resume tidak boleh percaya "berkasnya sudah ada"** — yang diukur adalah
-  permintaan yang benar-benar sampai ke server.
+- 🚩 **Tes fitur harus menyalakan sakelar fiturnya.** Tes pipeline yang lupa mengaktifkan fitur akan hijau tanpa pernah menyentuh kode yang diuji.
+- 🎨 **Tes piksel Robolectric wajib `@GraphicsMode(NATIVE)`**, kalau tidak ia lulus secara hampa.
+- 0️⃣ **`android.graphics.Color.red/green/blue` mengembalikan 0** di unit test JVM biasa. Semua matematika piksel memakai geseran bit, di produksi maupun di fixture.
+- 🔬 **Uji mutasi.** Setiap perbaikan penting dibalik sekali untuk memastikan tesnya memang gagal. Contoh: mengembalikan aturan SFX lama → tepat 3 tes `VocalSfxTest` gagal; melepas penjaga `milikSendiri` → tepat 2 tes `ReaderLayerTest` gagal; memaksa `verifikasi` selalu lulus → tepat 2 tes `ModelManagerTest` gagal.
+- 📈 **Resume tidak boleh percaya "berkasnya sudah ada".** Yang diukur adalah permintaan yang benar-benar sampai ke server.
 
-Kelas tes terpilih:
+**Kelas tes terpilih:**
 
 | Kelas | Yang dibuktikan |
 |---|---|
@@ -445,9 +398,9 @@ Kelas tes terpilih:
 
 ---
 
-## Arsitektur kode
+## 🧩 Arsitektur kode
 
-Satu modul `app`, paket `com.nyra.comic`, 41 berkas Kotlin.
+Satu modul `app`, paket `com.nyra.comic`, **41 berkas Kotlin**.
 
 | Berkas | Tanggung jawab |
 |---|---|
@@ -468,21 +421,21 @@ Satu modul `app`, paket `com.nyra.comic`, 41 berkas Kotlin.
 | `*Activity.kt` | Main, Result, Editor, Library, Reader, Models. |
 
 Seam pengujian di `Pipeline`: `detectorOverride`, `textDetectorOverride`,
-`rtDetectorOverride`, `inpaintOverride`, `providerOverride`,
-`glossaryOverride`, `cacheOverride`.
+`rtDetectorOverride`, `inpaintOverride`, `providerOverride`, `glossaryOverride`,
+`cacheOverride`.
 
 ---
 
-## Riwayat perbaikan
+## 📜 Riwayat perbaikan
 
-Ringkas, dari yang terbaru. Rinciannya tersimpan di riwayat commit.
+Ringkas, dari yang terbaru. Rincian lengkap tersimpan di riwayat commit.
 
 | Versi | Isi |
 |---|---|
-| **v2.7.5** | Mutu dan akurasi terjemahan. Nilai terjemahan dibersihkan sebelum digambar (entitas HTML seperti `&amp;`, kutip pembungkus luar, dan literal `null`/`undefined` kini dinormalkan — sebelumnya `null` atau tag mentah ikut tercetak di dalam balon). Nilai kosong/null kini dianggap *tidak terjawab* sehingga balon itu diminta ulang, bukan dibiarkan berbahasa asli tanpa penjelasan. Pemulihan JSON rusak (`salvageJson`) kini juga memungut nilai token telanjang `SKIP`/`null` (bukan hanya yang ter-quote) dan mengenali ID hingga 8 digit. Pembersih JSON (`cleanJson`) jauh lebih tahan model: objek seimbang diambil dengan pemindai yang paham string/escape (kurung yang kebetulan ada di dalam nilai terjemahan tidak lagi memotong objek), pembungkus blok kode berlabel apa pun (`json`/`JSON`/`jsonc`/`javascript`/tanda punggung-tiga <code>```</code> polos) serta kalimat pengantar/penutup dibuang, dan koma gantung sebelum `}`/`]` dibuang — `JSONObject` menolak koma gantung. Objek JSON juga kini dipilih dari calon-calon `{...}` (bukan hanya `{` pertama): prosa seperti `{lihat}` yang muncul di depan objek betulan ditolak karena bukan JSON sah, sehingga tidak lagi merampas objek. Nilai dinormalkan lebih lanjut: deret spasi/tab/baris baru (termasuk `&nbsp;` dan spasi ideografik) diratakan menjadi satu spasi, dan beragam bentuk penanda tak terbaca `[ ? ]`/`[? ]`/`[ ?]` disamakan menjadi `[?]`. Balon yang tidak terjawab kini dicoba ulang dengan *alasan* yang tercatat: nomor yang model balas `null`/kosong (mengaku tak terbaca) dicoba ulang satu per satu supaya potongan tunggalnya besar dan terbaca, sedangkan nomor yang sama sekali tidak dikirim model (kendala penomoran) dicoba ulang berkelompok kecil — dan sisanya yang masih gagal dilaporkan per alasan (berapa dianggap tak terbaca, berapa diabaikan), bukan hanya angka. Prompt ditambah aturan FIDELITY AND REGISTER (jaga register tiap tokoh, pertahankan panjang & tanda baca, jangan menambah kutip/honorifik/kata yang tidak ada, nama diri dipertahankan sebagaimana aslinya). |
+| **v2.7.5** | **Mutu dan akurasi terjemahan.** Nilai terjemahan dibersihkan sebelum digambar (entitas HTML seperti `&amp;`, kutip pembungkus luar, dan literal `null`/`undefined` kini dinormalkan — sebelumnya `null` atau tag mentah ikut tercetak di dalam balon). Nilai kosong/null kini dianggap *tidak terjawab* sehingga balon itu diminta ulang, bukan dibiarkan berbahasa asli tanpa penjelasan. Pemulihan JSON rusak (`salvageJson`) kini juga memungut nilai token telanjang `SKIP`/`null` (bukan hanya yang ter-quote) dan mengenali ID hingga 8 digit. Pembersih JSON (`cleanJson`) jauh lebih tahan model: objek seimbang diambil dengan pemindai yang paham string/escape (kurung yang kebetulan ada di dalam nilai terjemahan tidak lagi memotong objek), pembungkus blok kode berlabel apa pun (`json`/`JSON`/`jsonc`/`javascript`/tanda punggung-tiga <code>```</code> polos) serta kalimat pengantar/penutup dibuang, dan koma gantung sebelum `}`/`]` dibuang — `JSONObject` menolak koma gantung. Objek JSON juga kini dipilih dari calon-calon `{...}` (bukan hanya `{` pertama): prosa seperti `{lihat}` yang muncul di depan objek betulan ditolak karena bukan JSON sah, sehingga tidak lagi merampas objek. Nilai dinormalkan lebih lanjut: deret spasi/tab/baris baru (termasuk `&nbsp;` dan spasi ideografik) diratakan menjadi satu spasi, dan beragam bentuk penanda tak terbaca `[ ? ]`/`[? ]`/`[ ?]` disamakan menjadi `[?]`. Balon yang tidak terjawab kini dicoba ulang dengan *alasan* yang tercatat: nomor yang model balas `null`/kosong (mengaku tak terbaca) dicoba ulang satu per satu supaya potongan tunggalnya besar dan terbaca, sedangkan nomor yang sama sekali tidak dikirim model (kendala penomoran) dicoba ulang berkelompok kecil — dan sisanya yang masih gagal dilaporkan per alasan (berapa dianggap tak terbaca, berapa diabaikan), bukan hanya angka. Prompt ditambah aturan **FIDELITY AND REGISTER** (jaga register tiap tokoh, pertahankan panjang & tanda baca, jangan menambah kutip/honorifik/kata yang tidak ada, nama diri dipertahankan sebagaimana aslinya). |
 | **v2.7.4** | Halaman yang sebelumnya kosong tidak lagi dibiarkan tidak diterjemahkan ketika satu balasan JSON gagal diurai: pasangan `"nomor": "teks"` yang masih utuh diselamatkan, dan hanya pasangan yang benar-benar cacat yang hilang. Teks hasil render juga diperbaiki: font tidak lagi terlalu kecil dan tidak lagi meluap keluar garis balon atau bertindih dengan balon tetangga (perhitungan ukuran mengisi kedua fraksi balon, sumbu ditukar untuk balon tategaki, dan teks dipaksa muat mengikuti kontur balon). |
 | **v2.7.2** | Perbaikan aplikasi tertutup paksa di tengah bab besar. Penyebabnya memori, bukan logika: tiap request paralel merakit bitmap mosaik puluhan megabita dan dalam satu gelombang semuanya hidup bersamaan, sehingga proses dibunuh sistem tanpa sempat mencatat apa pun. Kini jumlah request paralel dihitung dari memori yang benar-benar tersedia (setelan pengguna jadi batas atas, bukan janji), potongan gambar dibebaskan segera setelah dikecilkan alih-alih menunggu mosaik selesai, sesi ONNX ditutup setelah tahap deteksi karena memori native-nya tidak dibersihkan GC, dan riwayat konteks halaman dibuat aman diakses banyak thread. Kalau memori tetap habis, kini muncul pesan jelas berikut saran, bukan mati senyap. |
-| **v2.7.1** | Serpihan teks dari panel dan balon berbeda tidak lagi runtuh jadi satu blok seukuran halaman: toleransi penggabungan dihitung dari ukuran serpihan, bukan dari blok yang sedang tumbuh. Ikut menghapus tambalan zaitun di atas artwork, dan tambalan yang warnanya menyimpang jauh dari sekitarnya kini ditolak. Pengemasan petak inpaint diperbaiki (5 -> 3 inferensi per halaman uji). Sisi kecepatan: durasi tiap tahap kini dicatat dan diringkas di log, berkas kerja disimpan sebagai WEBP lossless (bukan PNG) sehingga penyimpanan antar-tahap jauh lebih cepat tanpa kehilangan mutu, jumlah utas inferensi dibatasi agar tidak melawan penjadwal big.LITTLE, dan ada opsi baru untuk membatasi inpaint hanya pada teks besar. |
+| **v2.7.1** | Serpihan teks dari panel dan balon berbeda tidak lagi runtuh jadi satu blok seukuran halaman: toleransi penggabungan dihitung dari ukuran serpihan, bukan dari blok yang sedang tumbuh. Ikut menghapus tambalan zaitun di atas artwork, dan tambalan yang warnanya menyimpang jauh dari sekitarnya kini ditolak. Pengemasan petak inpaint diperbaiki (5 → 3 inferensi per halaman uji). Sisi kecepatan: durasi tiap tahap kini dicatat dan diringkas di log, berkas kerja disimpan sebagai WEBP lossless (bukan PNG) sehingga penyimpanan antar-tahap jauh lebih cepat tanpa kehilangan mutu, jumlah utas inferensi dibatasi agar tidak melawan penjadwal big.LITTLE, dan ada opsi baru untuk membatasi inpaint hanya pada teks besar. |
 | **v2.7.0** | Penghapus watermark (salin-cermin lokal, 71,3 % piksel pulih vs 53,4 % difusi) dan penimpaan gaya huruf per balon saat tipografi otomatis salah menebak. Label versi di layar utama diperbaiki — sempat tertulis tetap "v2.0.0" selama enam rilis. |
 | **v2.6.0** | Detektor OCR kini jadi lapisan kedua di jalur RT-DETR, sehingga teks tanpa balon (mis. Jepang tegak di latar polos) tidak lagi lolos tanpa terjemahan. Penengahan tegak dihitung dari siluet tinta, bukan metrik font: kemiringan 11/11/16/7 px turun jadi 0/0/1/0 px. |
 | **v2.5.1** | Kotak yang penata teks pasti tolak tidak lagi dikirim ke provider (hemat token), dan terjemahan yang gagal tergambar kini dilaporkan, bukan hilang diam-diam. |
@@ -500,54 +453,38 @@ Ringkas, dari yang terbaru. Rinciannya tersimpan di riwayat commit.
 | Ronde 13 | Glosarium istilah. |
 | Ronde 12 | Detektor RT-DETR dan pengukuran warna balon. |
 
-Beberapa jebakan yang sudah dibayar mahal dan tidak perlu diulang:
+**Beberapa jebakan yang sudah dibayar mahal dan tidak perlu diulang:**
 
-- Kotak berukuran negatif dari decoder YOLO ber-area 0, dan area 0 meracuni
-  setiap perbandingan rasio di hilir — **satu** kotak cacat bisa menghapus
-  seluruh balon sah di halaman itu. Karena itu `sanitize` berjalan lebih dulu.
-- Aturan "buang kalau menelan satu kotak 2,5× lebih kecil" menghapus balon
-  berduri (SCRIIII, STOOOP!), karena durinya sendiri terdeteksi sebagai kotak
-  kecil. Sekarang hanya dibuang bila menelan ≥2 kotak yang saling terpisah.
-- Aturan tinggi-relatif pada webtoon strip 1080×11700 mengubah balon biasa
-  menjadi "spanduk datar": 15 balon benar menjadi 10. Strip memakai tinggi
-  acuan tersendiri.
-- Anti-aliasing adalah jebakan untuk deteksi garis; jarak-ke-segmen yang
-  membedakan. Memilih warna huruf sebagai "piksel terjauh dari latar" justru
-  menukar isi dengan garis luar.
-- Sidik piksel 32×32 **tidak** invarian skala — 70 dari 1024 byte berbeda
-  antara render 120×200 dan 240×400 untuk gambar yang sama.
-- `Paint.hasGlyph` mengembalikan true untuk Adlam/Cuneiform/Linear-B, jadi
-  Robolectric tidak bisa membuktikan tofu. Cakupan cmap font tidak meramalkan
-  tofu.
+- Kotak berukuran negatif dari decoder YOLO ber-area 0, dan area 0 meracuni setiap perbandingan rasio di hilir — **satu** kotak cacat bisa menghapus seluruh balon sah di halaman itu. Karena itu `sanitize` berjalan lebih dulu.
+- Aturan "buang kalau menelan satu kotak 2,5× lebih kecil" menghapus balon berduri (SCRIIII, STOOOP!), karena durinya sendiri terdeteksi sebagai kotak kecil. Sekarang hanya dibuang bila menelan ≥2 kotak yang saling terpisah.
+- Aturan tinggi-relatif pada webtoon strip 1080×11700 mengubah balon biasa menjadi "spanduk datar": 15 balon benar menjadi 10. Strip memakai tinggi acuan tersendiri.
+- Anti-aliasing adalah jebakan untuk deteksi garis; jarak-ke-segmen yang membedakan. Memilih warna huruf sebagai "piksel terjauh dari latar" justru menukar isi dengan garis luar.
+- Sidik piksel 32×32 **tidak** invarian skala — 70 dari 1024 byte berbeda antara render 120×200 dan 240×400 untuk gambar yang sama.
+- `Paint.hasGlyph` mengembalikan true untuk Adlam/Cuneiform/Linear-B, jadi Robolectric tidak bisa membuktikan tofu. Cakupan cmap font tidak meramalkan tofu.
 
 ---
 
-## Batas yang diketahui
+## ⚠️ Batas yang diketahui
 
-- Teks yang menyatu dengan artwork (tategaki di tengah panel, logo bab)
-  sengaja tidak disentuh. Menimpanya akan merusak gambar.
-- SFX besar yang digambar tangan di luar balon hanya dibersihkan bila model
-  LaMa terpasang; tanpanya, dibiarkan apa adanya.
-- OCR lokal belum ada — pembacaan teks sepenuhnya dilakukan LLM vision. Ini
-  berarti butuh jaringan dan API key.
-- Terjemahan bergantung pada kualitas model yang Anda pilih. Model kecil murah
-  cenderung memotong kalimat panjang.
-- Hanya arm64-v8a yang dirilis; ABI lain harus dibangun sendiri.
+- 🎨 Teks yang menyatu dengan artwork (tategaki di tengah panel, logo bab) sengaja tidak disentuh. Menimpanya akan merusak gambar.
+- 💥 SFX besar yang digambar tangan di luar balon hanya dibersihkan bila model LaMa terpasang; tanpanya, dibiarkan apa adanya.
+- 🔍 OCR lokal belum ada — pembacaan teks sepenuhnya dilakukan LLM vision. Ini berarti butuh jaringan dan API key.
+- 🧠 Terjemahan bergantung pada kualitas model yang Anda pilih. Model kecil murah cenderung memotong kalimat panjang.
+- 📦 Tiga ABI dirilis sekaligus: `arm64-v8a`, `armeabi-v7a`, dan `x86_64`.
 
-### Balon yang tetap tidak diterjemahkan
+### 🔇 Balon yang tetap tidak diterjemahkan
 
-Sebagian kotak memang **sengaja** tidak digambari teks, dan itu bukan
-kegagalan. Penata teks menolak kotak yang bentuknya mustahil untuk sebuah
-balon — rasio lebar:tinggi ≥ 3,2 sambil selebar ≥ 35 % halaman, atau luasnya
-≥ 3,5 % halaman dengan rasio ≥ 2,8. Bentuk begitu hampir selalu panel utuh,
-bilah judul, atau SFX yang membentang; menimpanya akan merusak artwork.
+Sebagian kotak memang **sengaja** tidak digambari teks, dan itu bukan kegagalan.
+Penata teks menolak kotak yang bentuknya mustahil untuk sebuah balon — rasio
+lebar:tinggi ≥ 3,2 sambil selebar ≥ 35 % halaman, atau luasnya ≥ 3,5 % halaman dengan
+rasio ≥ 2,8. Bentuk begitu hampir selalu panel utuh, bilah judul, atau SFX yang
+membentang; menimpanya akan merusak artwork.
 
-Sejak v2.5.1 saringan itu dijalankan **sebelum** potongan dikirim, bukan
-sesudah. Dulu kotak semacam ini tetap ikut dibayar sebagai token lalu hasilnya
-dibuang tanpa jejak di log. Pada berkas oracle repo ini 61 dari 480 kotak
-(12,7 %) masuk golongan tersebut.
+Sejak v2.5.1 saringan itu dijalankan **sebelum** potongan dikirim, bukan sesudah. Dulu
+kotak semacam ini tetap ikut dibayar sebagai token lalu hasilnya dibuang tanpa jejak di
+log. Pada berkas oracle repo ini 61 dari 480 kotak (12,7 %) masuk golongan tersebut.
 
-Yang tampil di log sekarang:
+**Yang tampil di log sekarang:**
 
 | Baris | Artinya |
 |---|---|
@@ -555,19 +492,29 @@ Yang tampil di log sekarang:
 | `N terjemahan tidak tergambar` | Model menjawab tapi kotaknya ditolak. Terjemahannya tersimpan di proyek dan bisa ditempatkan manual lewat editor. |
 | `N balon dibiarkan dalam bahasa asli` | Provider tidak menjawab atau proses dihentikan. Jalankan ulang untuk melengkapi. |
 
-Ketiganya berbeda sebab, jadi ditulis terpisah. Kalau sebuah balon hilang
-tanpa salah satu baris di atas, itu bug — laporkan beserta halamannya.
+Ketiganya berbeda sebab, jadi ditulis terpisah. Kalau sebuah balon hilang tanpa salah
+satu baris di atas, itu bug — laporkan beserta halamannya.
 
 ---
 
-## Lisensi
+## 📄 Lisensi
 
-MIT.
+**MIT.**
 
 Berbasis [cypy](https://github.com/indravoyager/cypy) (MIT). Ide-ide arsitektur
 ditelaah dari [comic-translate](https://github.com/ogkalu2/comic-translate)
 (Apache-2.0) dan [BallonsTranslator](https://github.com/dmMaze/BallonsTranslator)
 (GPL-3.0, **ide saja, tanpa kode**).
 
-Model dan font memiliki lisensinya masing-masing: RT-DETR & PP-OCR Apache-2.0,
-Noto SIL OFL 1.1. Lihat [tabel model](#model-yang-dipakai).
+Model dan font memiliki lisensinya masing-masing: RT-DETR & PP-OCR Apache-2.0, Noto SIL
+OFL 1.1. Lihat [tabel model](#model-yang-dipakai).
+
+---
+
+<div align="center">
+
+**🇯🇵 → 🌍 *Translate. Restore. Read.***
+
+<sub>Dibuat dengan 💜 untuk para pembaca komik.</sub>
+
+</div>
