@@ -513,7 +513,7 @@ OFL 1.1. Lihat [tabel model](#model-yang-dipakai).
 
 <div align="center">
 
-**🇯🇵 → 🌍 *Translate. Restore. Read.***
+**🇯🇵 → 🌍** *Translate. Restore. Read.*
 
 <sub>Dibuat dengan 💜 untuk para pembaca komik.</sub>
 
