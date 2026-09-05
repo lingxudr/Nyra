@@ -38,6 +38,8 @@
     <string name="lbl_warna">Pertahankan warna asli balon</string>
     <string name="lbl_tipografi">Tipografi adaptif</string>
     <string name="hint_tipografi">Mengukur teks asli tiap balon — seberapa penuh balonnya dan setebal apa hurufnya — lalu meniru itu pada terjemahannya. Diukur dari gambar, bukan ditanyakan ke AI, jadi tidak menambah biaya token.</string>
+    <string name="lbl_self_review">Tinjau ulang hasil terjemahan</string>
+    <string name="hint_self_review">Setelah satu halaman selesai diterjemahkan, model meninjau ulang tiap balon sekali lagi — tanpa gambar — untuk memperbaiki nada yang meleset, honorifik, dan nama/istilah yang tidak konsisten. Aktif secara bawaan; matikan untuk menghemat token pada bab yang sangat panjang.</string>
     <string name="lbl_kontur">Ikuti bentuk balon</string>
     <string name="hint_kontur">Menutup balon sesuai bentuk aslinya, bukan persegi. Mencegah artwork di sudut balon oval ikut tercat. Balon yang bentuknya tak terbaca otomatis kembali memakai persegi membulat.</string>
     <string name="hint_warna">Mengambil warna latar dan warna huruf dari gambar, sehingga balon hitam atau berwarna tidak berubah jadi kotak putih.</string>

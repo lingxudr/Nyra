@@ -68,6 +68,19 @@ abstract class LLMProvider(val apiKey: String, modelName: String) {
     abstract fun translateImage(image: Bitmap, prompt: String): String?
 
     /**
+     * Kirim prompt TEKS murni (tanpa gambar) dan kembalikan jawaban mentah.
+     *
+     * Dipakai pass kedua / [Pipeline]'s self-review: setelah satu halaman
+     * diterjemahkan, hasilnya ditinjau ulang sekali lagi untuk nada, register,
+     * dan konsistensi nama. Jauh lebih murah daripada panggilan visi.
+     *
+     * Implementasi default mengembalikan null, yang berarti provider itu tidak
+     * mendukungnya — self-review hanya dilewati dengan tenang (tidak error).
+     * Bukan metode abstrak supaya provider baru tidak wajib mengisinya.
+     */
+    open fun translateText(prompt: String): String? = null
+
+    /**
      * Kirim mosaik bernomor DITAMBAH satu gambar rujukan (halaman utuh).
      *
      * Gambar rujukan membantu model melihat ekspresi wajah, siapa yang bicara,
@@ -144,7 +157,7 @@ abstract class LLMProvider(val apiKey: String, modelName: String) {
                 )
                 "openrouter" -> OpenAICompatProvider(
                     key, model, "https://openrouter.ai/api/v1/chat/completions", "OpenRouter",
-                    jsonMode = false, requiresKey = true
+                    jsonMode = true, requiresKey = true
                 )
                 else -> {
                     var base = cfg.customBaseUrl.trim().trimEnd('/')
@@ -208,6 +221,60 @@ class GeminiProvider(apiKey: String, modelName: String) : LLMProvider(apiKey, mo
 
     fun translateBase64(imagesB64: List<String>, prompt: String): String? =
         translateBase64ForTest(imagesB64, prompt, null)
+
+    /**
+     * Pass kedua self-review: kirim prompt TEKS murni (tanpa gambar) dan
+     * kembalikan jawaban segar. Jauh lebih murah daripada panggilan visi.
+     *
+     * Memakai generateContent dengan satu bagian teks; endpoint dan format
+     * responsnya identik dengan [translateBase64ForTest], jadi logika
+     * pemakaian/pemetaan tetap sama.
+     */
+    override fun translateText(prompt: String): String? {
+        if (!validateApiKey()) throw ApiKeyException()
+        val body = JSONObject().apply {
+            put("contents", JSONArray().put(JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+            }))
+            put("generationConfig", JSONObject().apply {
+                put("temperature", 0)
+                put("topP", 0.1)
+                put("topK", 1)
+                put("responseMimeType", "application/json")
+                put("maxOutputTokens", 8192)
+            })
+            put("safetySettings", JSONArray().apply {
+                for (cat in listOf(
+                    "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"
+                )) {
+                    put(JSONObject().apply {
+                        put("category", cat)
+                        put("threshold", "BLOCK_NONE")
+                    })
+                }
+            })
+        }
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
+        val req = Request.Builder()
+            .url(url)
+            .addHeader("X-goog-api-key", apiKey.trim())
+            .post(body.toString().toRequestBody(JSON))
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (resp.code == 401) throw ApiKeyException()
+            if (!resp.isSuccessful) throw RuntimeException("Gemini API error ${resp.code}: ${text.take(200)}")
+            catatPemakaian(text)
+            return runCatching {
+                val cand = JSONObject(text).getJSONArray("candidates").getJSONObject(0)
+                val parts = cand.getJSONObject("content").getJSONArray("parts")
+                val sb = StringBuilder()
+                for (i in 0 until parts.length()) sb.append(parts.getJSONObject(i).optString("text"))
+                sb.toString()
+            }.getOrElse { throw RuntimeException("Unexpected Gemini response: ${text.take(200)}") }
+        }
+    }
 
     override fun translateImages(images: List<Bitmap>, prompt: String): String? {
         val b64 = images.map { toBase64(it) }
@@ -463,15 +530,41 @@ class OpenAICompatProvider(
             })
         }
 
+        return kirim(JSONArray().put(JSONObject().apply {
+            put("role", "user")
+            put("content", content)
+        }))
+    }
+
+    /**
+     * Pass kedua self-review: kirim prompt TEKS murni tanpa gambar.
+     *
+     * Memakai jalur kirim() yang sama, hanya `content`-nya berupa string, jadi
+     * format body tetap cocok untuk endpoint OpenAI-compatible apa pun.
+     */
+    override fun translateText(prompt: String): String? {
+        if (requiresKey && apiKey.isBlank()) throw ApiKeyException()
+        return kirim(JSONArray().put(JSONObject().apply {
+            put("role", "user")
+            put("content", prompt)
+        }))
+    }
+
+    /**
+     * Inti request OpenAI-compatible: susun payload (model/suhu/max_tokens/
+     * json_mode), kirim, dan ambil `choices[0].message.content`.
+     */
+    private fun kirim(messages: JSONArray): String? {
         val payload = JSONObject().apply {
             put("model", modelName)
             put("temperature", 0)
             put("top_p", 0.1)
+            // max_tokens dicegah terpotong: versi lama tidak mengirim ini,
+            // sehingga Zen/OpenCode/OpenRouter/Custom sering memotong JSON di
+            // tengah atau membungkusnya dalam markdown.
+            put("max_tokens", MAX_TOKENS)
             if (jsonMode) put("response_format", JSONObject().put("type", "json_object"))
-            put("messages", JSONArray().put(JSONObject().apply {
-                put("role", "user")
-                put("content", content)
-            }))
+            put("messages", messages)
         }
 
         val builder = Request.Builder()
@@ -500,5 +593,9 @@ class OpenAICompatProvider(
                 throw RuntimeException("Unexpected $providerName response format")
             }
         }
+    }
+
+    companion object {
+        private const val MAX_TOKENS = 8192
     }
 }

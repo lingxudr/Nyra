@@ -73,6 +73,9 @@ class GlossaryPipelineTest {
         cfg.filterSfxAktif = false
         cfg.detektorRtdetr = true
         cfg.ocrTeksLepas = false
+        // Tes ini mengecek kebersihan glosarium via satu panggilan visi; review
+        // (pass 2b) menambah panggilan teks sehingga dinonaktifkan.
+        cfg.selfReview = false
         return cfg
     }
 

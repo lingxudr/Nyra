@@ -81,6 +81,9 @@ class PageReferencePipelineTest {
         cfg.ocrTeksLepas = false
         cfg.konteksHalaman = false
         cfg.gambarRujukan = rujukan
+        // Tes ini memeriksa struktur prompt rujukan halaman; review (pass 2b)
+        // menambah panggilan teks yang mengubah `server.lastBody`, jadi dimatikan.
+        cfg.selfReview = false
         return cfg
     }
 

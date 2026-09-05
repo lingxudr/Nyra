@@ -339,6 +339,8 @@ class MainActivity : AppCompatActivity(), TranslationService.Companion.Listener 
         b.swWarna.setOnCheckedChangeListener { _, checked -> cfg.warnaOtomatis = checked }
         b.swTipografi.isChecked = cfg.tipografiAdaptif
         b.swTipografi.setOnCheckedChangeListener { _, checked -> cfg.tipografiAdaptif = checked }
+        b.swSelfReview.isChecked = cfg.selfReview
+        b.swSelfReview.setOnCheckedChangeListener { _, checked -> cfg.selfReview = checked }
         b.swKontur.isChecked = cfg.konturBalon
         b.swKontur.setOnCheckedChangeListener { _, checked -> cfg.konturBalon = checked }
 

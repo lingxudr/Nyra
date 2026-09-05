@@ -98,6 +98,7 @@ class EndToEndPipelineTest {
         cfg.customBaseUrl = "http://127.0.0.1:${server.port}"
         cfg.minRequestDelay = 0.0f
         cfg.filterSfxAktif = false           // SFX filter needs pixel stats, not part of this check
+        cfg.selfReview = false               // opt out of pass 2b; this test counts vision requests
         cfg.maxBubblesPerRequest = 20
 
         val outDir = File(ctx.cacheDir, "outtree").apply { mkdirs() }
@@ -183,6 +184,7 @@ class EndToEndPipelineTest {
         val cfg = Config(ctx)
         cfg.minRequestDelay = 0.0f
         cfg.filterSfxAktif = false
+        cfg.selfReview = false
 
         val pipeline = Pipeline(ctx, cfg, log = { logLines.add(it) }, progress = { _, _ -> })
         pipeline.detectorOverride = { bmp -> listOf(intArrayOf(40, 40, 260, 150)) }
@@ -216,6 +218,7 @@ class EndToEndPipelineTest {
         cfg.provider = "custom"
         cfg.minRequestDelay = 0.0f
         cfg.filterSfxAktif = false
+        cfg.selfReview = false
         cfg.ocrTeksLepas = true
 
         replyWith(40)
@@ -259,6 +262,7 @@ class EndToEndPipelineTest {
         cfg.provider = "custom"
         cfg.minRequestDelay = 0.0f
         cfg.filterSfxAktif = false
+        cfg.selfReview = false
         cfg.ocrTeksLepas = false
 
         replyWith(40)
@@ -301,6 +305,7 @@ class EndToEndPipelineTest {
         cfg.provider = "custom"
         cfg.minRequestDelay = 0.0f
         cfg.filterSfxAktif = false
+        cfg.selfReview = false
 
         replyWith(40)
 
@@ -350,6 +355,7 @@ class EndToEndPipelineTest {
         cfg.provider = "custom"
         cfg.minRequestDelay = 0.0f
         cfg.filterSfxAktif = false
+        cfg.selfReview = false
 
         val pipeline = Pipeline(
             ctx, cfg,
@@ -403,6 +409,7 @@ class EndToEndPipelineTest {
         val cfg = Config(ctx)
         cfg.minRequestDelay = 0.0f
         cfg.filterSfxAktif = false
+        cfg.selfReview = false
 
         val pipeline = Pipeline(ctx, cfg, log = { logLines.add(it) }, progress = { _, _ -> })
         pipeline.detectorOverride = { listOf(box) }

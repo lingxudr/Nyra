@@ -973,6 +973,14 @@ class Pipeline(
             }
         }
 
+        // ---- Pass 2b (self-review, opsional) ----
+        // Tinjau ulang terjemahan yang baru saja diterapkan lewat panggilan
+        // teks murni (jauh lebih murah daripada panggilan visi). Kegagalan
+        // apa pun di sini dilewati dengan tenang — hasil asli tetap dipakai.
+        if (cfg.selfReview && !cancelled) {
+            selfReview(units, provider, lang)
+        }
+
         // Pass 2 selesai: gambar rujukan terakhir tidak akan dipakai lagi, dan
         // pass 3 butuh memorinya untuk mendekode halaman utuh.
         bebaskanRujukan()
@@ -1208,10 +1216,21 @@ class Pipeline(
      */
     private val RETRY_CHUNK = 8
 
+    /** Berapa balon yang di-review dalam satu panggilan teks pass 2b. */
+    private val REVIEW_CHUNK = 40
+
     /** Hasil satu request mosaik, belum diterapkan ke state bersama. */
     private class HasilChunk(
         val diterima: Map<String, String>,
         val idMapping: Map<String, PendingCrop>
+    )
+
+    /** Satu balon yang sudah terjemah dan ikut ditinjau di pass 2b. */
+    private data class ReviewItem(
+        val unitIdx: Int,
+        val partIdx: Int,
+        val boxIdx: Int,
+        val teks: String
     )
 
     /**
@@ -1412,6 +1431,132 @@ class Pipeline(
         }
     }
 
+    // ------------------------------------------------------------------
+    // Self-review pass (Pass 2b)
+    // ------------------------------------------------------------------
+
+    /**
+     * Pass 2b — tinjau ulang hasil terjemahan yang baru diterapkan, dengan
+     * SATU panggilan teks murni per kumpulan balon.
+     *
+     * Pass 2 berjalan per-mosaik dan melihat TEPAT SATU gambar; akibatnya
+     * konsistensi lintas balon (nama tokoh, honorifik, register/kesopanan yang
+     * meleset) sering terlewat karena model tidak pernah melihat semua balon
+     * sekaligus. Pass ini memberikan SEMUA terjemahan yang sudah jadi sekaligus
+     * dan meminta model merapikannya — jauh lebih murah daripada memanggil ulang
+     * visi, dan menangkap kelas kegagalan yang paling terasa di hasil akhir.
+     *
+     * Pengaman:
+     *  - Hanya balon yang SUDAH punya jawaban non-kosong yang dikirim.
+     *  - Kegagalan jaringan/parsing tidak melempar: hasil asli tetap dipakai.
+     *  - Revisi hanya diterapkan bila menghasilkan teks benar-benar BERBEDA;
+     *    nilai hampa/'SKIP' tidak boleh menimpa terjemahan yang sudah ada.
+     */
+    private fun selfReview(units: List<PageUnit>, provider: LLMProvider, lang: String) {
+        val daftar = ArrayList<ReviewItem>()
+        for ((ui, unit) in units.withIndex()) {
+            for ((pi, part) in unit.parts.withIndex()) {
+                for ((boxKey, teks) in part.translations) {
+                    // Nama kotak adalah boxIdx dalam bentuk string; biarkan yang
+                    // bukan angka (tidak seharusnya ada) ikut terlewat.
+                    val boxIdx = boxKey.toIntOrNull() ?: continue
+                    if (teksKosong(teks)) continue
+                    daftar.add(ReviewItem(ui, pi, boxIdx, teks))
+                }
+            }
+        }
+        if (daftar.isEmpty()) {
+            log("  [i] Self-review: tidak ada balon terjemahan untuk ditinjau.")
+            return
+        }
+        log("  [i] Self-review: meninjau ulang ${daftar.size} balon ($lang)...")
+
+        var diubah = 0
+        for (batch in daftar.chunked(REVIEW_CHUNK)) {
+            if (cancelled) break
+            val prompt = buildReviewPrompt(batch, lang)
+            val raw = try {
+                rateLimiter.executeWithRetry(provider.providerName) {
+                    durasi.ukur(Durasi.Tahap.API) { provider.translateText(prompt) }
+                }
+            } catch (ake: ApiKeyException) {
+                throw ake
+            } catch (ex: Exception) {
+                log("  [!] Self-review gagal: ${ex.message}")
+                continue
+            } ?: continue
+
+            catatPemakaian(provider)
+
+            // Parsing dibiarkan sekuat jalur pass 2: JSON bersih dipakai,
+            // JSON rusak diselamatkan dari pasangan yang masih utuh.
+            val hasil = try {
+                BoxUtils.parseHasilTerjemahan(raw)
+            } catch (e: Exception) {
+                val selamat = runCatching { BoxUtils.salvageJson(raw) }.getOrDefault(emptyMap())
+                if (selamat.isNotEmpty()) {
+                    log("  [!] Self-review JSON cacat (${e.message}) — ${selamat.size} balon diselamatkan.")
+                }
+                HasilTerjemahan(selamat, emptySet())
+            }
+
+            // Kunci jawaban di-BuildReviewPrompt adalah 1..N; petakan lagi ke
+            // lokasi balon. Revisi hanya dipakai bila berubah dan tidak hampa.
+            for ((i, item) in batch.withIndex()) {
+                val perbaikan = hasil.jawaban[(i + 1).toString()] ?: continue
+                if (teksKosong(perbaikan) || perbaikan == item.teks) continue
+                val part = units.getOrNull(item.unitIdx)?.parts?.getOrNull(item.partIdx) ?: continue
+                part.translations[item.boxIdx.toString()] = perbaikan
+                simpanKeCache(
+                    PendingCrop(part.file, item.unitIdx, item.partIdx, item.boxIdx),
+                    provider, lang, perbaikan
+                )
+                diubah++
+            }
+        }
+        if (diubah > 0) log("  [i] Self-review: $diubah balon diperbaiki.")
+    }
+
+    /**
+     * Prompt pass 2b: beri model semua terjemahan yang sudah jadi dan minta
+     * ia perbaiki hal yang paling mudah salah pada pass mosaik — register,
+     * honorifik, konsistensi nama/istilah. Ia TIDAK boleh mengubah makna,
+     * menambah/mengurangi teks, atau mengubah panjang/kalimat.
+     */
+    private fun buildReviewPrompt(batch: List<ReviewItem>, lang: String): String {
+        val bahasa = lang.ifBlank { "Indonesian" }
+        return buildString {
+            append("You are a meticulous $bahasa manga proofreader. ")
+            append("Below are dialogue bubbles that were just translated one-by-one, so they may be inconsistent with each other. ")
+            append("Rewrite ONLY the values that need fixing. \n\n")
+
+            append("WHAT TO FIX:\n")
+            append("1. Register / politeness mismatch: keep each character's tone consistent (polite stays polite, casual stays casual, rough stays rough). Do NOT flatten everyone into one neutral voice. \n")
+            append("2. Honorifics (san, kun, chan, sama, senpai, sensei...) kept untranslated and spelled consistently. \n")
+            append("3. Character and place names kept consistent with each other and with the glossary. \n")
+            append("4. Naturalness: make it read like a native $bahasa speaker, with no awkward phrasing. \n")
+            append("5. Keep the exact length, punctuation, ellipses, exclamation/question marks and trailing sounds. \n\n")
+
+            append("WHAT NOT TO DO:\n")
+            append("1. Do NOT change the meaning or the facts. Do NOT add or drop content. \n")
+            append("2. Do NOT add quotation marks, honorifics, particles or filler that are not present. \n")
+            append("3. Do NOT shorten or pad a line, and do NOT turn a real bubble into 'SKIP'. \n")
+            append("4. Do NOT renumber or reorder. \n\n")
+
+            append(Glossary.promptSection(glossaryOverride ?: glossary))
+
+            append("CURRENT TRANSLATIONS (id: text already in $bahasa):\n")
+            for ((i, item) in batch.withIndex()) {
+                append((i + 1)).append(": ").append(item.teks).append("\n")
+            }
+            append("\nOUTPUT FORMAT:\n")
+            append("Return ONLY valid JSON, without markdown. ")
+            append("Keys are the ids of entries you CHANGED. ")
+            append("Do NOT include entries you left as-is. ")
+            append("Example: {\"2\": \"$bahasa replacement\", \"5\": \"$bahasa replacement\"}. ")
+            append("If nothing needs fixing, return {}.\n")
+        }
+    }
 
     // ------------------------------------------------------------------
     // Steps
@@ -2114,9 +2259,13 @@ class Pipeline(
             "indonesian" to ("Cepat bangun!" to "Ibu... tunggu..."),
             "japanese" to ("早く起きて！" to "お母さん…待って…"),
             "mandarin" to ("快点起床！" to "妈妈……等等……"),
+            "chinese" to ("快点起床！" to "妈妈……等等……"),
             "spanish" to ("¡Despierta rápido!" to "Madre... espera..."),
             "portuguese" to ("Acorde rápido!" to "Mãe... espere..."),
-            "javanese" to ("Ndang tangi!" to "Ibu... enteni...")
+            "javanese" to ("Ndang tangi!" to "Ibu... enteni..."),
+            "korean" to ("빨리 일어나!" to "어머니... 잠깐만..."),
+            "thai" to ("ตื่นเร็วๆ สิ!" to "แม่... เดี๋ยวก่อน..."),
+            "vietnamese" to ("Dậy nhanh!" to "Mẹ... đợi đã...")
         )
         val (ex1, ex3) = examples[lang.lowercase()] ?: examples["english"]!!
 
@@ -2128,10 +2277,13 @@ class Pipeline(
         val ex2 = when (lang.lowercase()) {
             "indonesian" -> "Ugh..."
             "japanese" -> "うぐっ…"
-            "mandarin" -> "呃……"
+            "mandarin", "chinese" -> "呃……"
             "spanish" -> "Ugh..."
             "portuguese" -> "Ugh..."
             "javanese" -> "Adhuh..."
+            "korean" -> "으읍..."
+            "thai" -> "อึก..."
+            "vietnamese" -> "Ựt..."
             else -> "Ugh..."
         }
 

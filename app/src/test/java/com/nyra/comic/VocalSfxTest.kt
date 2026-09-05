@@ -115,6 +115,9 @@ class VocalSfxTest {
         cfg.detektorRtdetr = true
         cfg.ocrTeksLepas = false
         cfg.cacheTerjemahan = false
+        // Tes ini menyimpan `server.lastBody` (prompt visi) dan memeriksa aturan
+        // "SFX AND VOICE RULE"; review (pass 2b) menimpa lastBody sehingga dimatikan.
+        cfg.selfReview = false
         return cfg
     }
 

@@ -118,6 +118,9 @@ class CachePipelineTest {
         inpaintLama = false
         cacheTerjemahan = true
         hitungBiaya = true
+        // Pass 2b (self-review) menambah satu panggilan teks; tes ini menghitung
+        // permintaan visi yang sampai ke server, jadi review dimatikan.
+        selfReview = false
         maxBubblesPerRequest = 20
     }
 

@@ -29,18 +29,22 @@ object Providers {
             "gemini-flash-latest",
             "gemini-flash-lite-latest",
             "gemini-pro-latest",
+            "gemini-3.8-flash",
             "gemini-3.7-flash",
             "gemini-3.6-flash",
             "gemini-3.5-flash",
-            "gemini-2.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
             "gemini-2.5-pro"
         ),
-        "openai" to listOf("gpt-4o-mini", "gpt-4o"),
+        "openai" to listOf("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"),
         "zen" to listOf("minimax-m3-free"),
         "opencodego" to listOf("mimo-v2.5"),
         "openrouter" to listOf(
-            "qwen/qwen2.5-vl-72b-instruct:free",
-            "google/gemini-flash-1.5"
+            "google/gemma-4-31b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "openrouter/free"
         ),
         "custom" to listOf("gpt-4o-mini")
     )
@@ -64,7 +68,7 @@ object Providers {
             "https://opencode.ai/auth", "API key required"
         ),
         "openrouter" to ProviderMeta(
-            "openrouter", "OpenRouter", "qwen/qwen2.5-vl-72b-instruct:free",
+            "openrouter", "OpenRouter", "google/gemma-4-31b-it:free",
             "https://openrouter.ai/keys", "Access 100+ vision models"
         ),
         "custom" to ProviderMeta(
@@ -424,6 +428,20 @@ class Config internal constructor(ctx: Context) {
     var konteksHalaman: Boolean
         get() = prefs.getBoolean("konteks_halaman", true)
         set(v) = prefs.edit().putBoolean("konteks_halaman", v).apply()
+
+    /**
+     * Setelah satu halaman diterjemahkan, minta model meninjau ulang hasilnya
+     * sekali lagi (pass kedua, teks murni tanpa gambar) dan membetulkan hal-hal
+     * yang mudah salah: nada/register yang meleset (invented politeness atau
+     * justru terlalu kasar), honorifik, dan konsistensi nama/istilah.
+     *
+     * Biayanya SATU panggilan teks per halaman — jauh lebih murah daripada
+     * panggilan visi. Aktif secara bawaan karena paling terasa hasilnya;
+     * matikan untuk memangkas token pada bab yang sangat panjang.
+     */
+    var selfReview: Boolean
+        get() = prefs.getBoolean("self_review", true)
+        set(v) = prefs.edit().putBoolean("self_review", v).apply()
 
     /**
      * URI berkas glosarium (TSV/TXT/JSON) yang dipilih pengguna, kosong bila
